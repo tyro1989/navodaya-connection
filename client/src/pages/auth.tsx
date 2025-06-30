@@ -10,11 +10,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
 import { insertUserSchema } from "@shared/schema";
 import { z } from "zod";
-import { GraduationCap, Phone, UserPlus } from "lucide-react";
+import { GraduationCap, Phone, UserPlus, ChevronDown } from "lucide-react";
 
 // Development mode check
 const isDevelopment = import.meta.env.MODE === 'development';
@@ -78,10 +79,22 @@ const otpSchema = z.object({
   otp: z.string().length(6, "OTP must be 6 digits"),
 });
 
-// Development login schema - simplified without phone verification
+// Development login schema - comprehensive but optional fields
 const devLoginSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
   email: z.string().email("Please enter a valid email address").optional().or(z.literal("")),
+  batchYear: z.number().min(1990).max(new Date().getFullYear()).optional(),
+  profession: z.string().optional(),
+  professionOther: z.string().optional(),
+  state: z.string().optional(),
+  district: z.string().optional(),
+  pinCode: z.string().optional(),
+  isExpert: z.boolean().optional(),
+  expertiseAreas: z.array(z.string()).optional(),
+  helpAreas: z.array(z.string()).optional(),
+  dailyRequestLimit: z.number().min(1).max(20).optional(),
+  upiId: z.string().optional(),
+  bio: z.string().optional(),
 });
 
 const registrationSchema = insertUserSchema.extend({
@@ -102,6 +115,7 @@ export default function Auth() {
   const [step, setStep] = useState<"phone" | "otp" | "register" | "dev-login">(isDevelopment ? "dev-login" : "phone");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [generatedOtp, setGeneratedOtp] = useState("");
+  const [showOptionalFields, setShowOptionalFields] = useState(false);
 
   const phoneForm = useForm<PhoneFormData>({
     resolver: zodResolver(phoneSchema),
@@ -115,7 +129,21 @@ export default function Auth() {
 
   const devLoginForm = useForm<DevLoginFormData>({
     resolver: zodResolver(devLoginSchema),
-    defaultValues: { name: "", email: "" },
+    defaultValues: { 
+      name: "", 
+      email: "",
+      batchYear: 2020,
+      profession: "Studying",
+      state: "Karnataka",
+      district: "Bengaluru Urban",
+      pinCode: "560001",
+      isExpert: false,
+      expertiseAreas: [],
+      helpAreas: [],
+      dailyRequestLimit: 3,
+      upiId: "",
+      bio: "",
+    },
   });
 
   const registrationForm = useForm<RegistrationFormData>({
@@ -150,13 +178,26 @@ export default function Auth() {
       // Create a mock phone number for development
       const mockPhone = "+919999999999";
       const userData = {
-        ...data,
         phone: mockPhone,
-        batchYear: 2020,
-        profession: "Studying",
-        state: "Karnataka",
-        district: "Bengaluru Urban",
-        pinCode: "560001",
+        name: data.name,
+        email: data.email || "",
+        batchYear: data.batchYear || 2020,
+        profession: data.profession || "Studying",
+        professionOther: data.professionOther || "",
+        state: data.state || "Karnataka",
+        district: data.district || "Bengaluru Urban",
+        pinCode: data.pinCode || "560001",
+        gpsLocation: "",
+        gpsEnabled: false,
+        helpAreas: data.helpAreas || [],
+        helpAreasOther: "",
+        expertiseAreas: data.expertiseAreas || [],
+        isExpert: data.isExpert || false,
+        dailyRequestLimit: data.dailyRequestLimit || 3,
+        phoneVisible: false,
+        upiId: data.upiId || "",
+        bio: data.bio || "",
+        profileImage: "",
         isActive: true,
       };
       
@@ -336,6 +377,187 @@ export default function Auth() {
                       </FormItem>
                     )}
                   />
+
+                  {/* Optional Fields Collapsible Section */}
+                  <Collapsible open={showOptionalFields} onOpenChange={setShowOptionalFields}>
+                    <CollapsibleTrigger asChild>
+                      <Button type="button" variant="outline" className="w-full">
+                        <ChevronDown className={`h-4 w-4 transition-transform ${showOptionalFields ? 'rotate-180' : ''}`} />
+                        {showOptionalFields ? 'Hide' : 'Show'} Optional Details
+                      </Button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="space-y-4 mt-4">
+                      {/* Batch Year */}
+                      <FormField
+                        control={devLoginForm.control}
+                        name="batchYear"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Batch Year</FormLabel>
+                            <Select
+                              onValueChange={(value) => field.onChange(parseInt(value))}
+                              defaultValue={field.value?.toString()}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select batch year" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {batchYears.map((year) => (
+                                  <SelectItem key={year} value={year.toString()}>
+                                    {year}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      {/* Profession */}
+                      <FormField
+                        control={devLoginForm.control}
+                        name="profession"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Profession</FormLabel>
+                            <Select onValueChange={field.onChange} defaultValue={field.value}>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select profession" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {professionOptions.map((profession) => (
+                                  <SelectItem key={profession} value={profession}>
+                                    {profession}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      {/* State */}
+                      <FormField
+                        control={devLoginForm.control}
+                        name="state"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>State</FormLabel>
+                            <Select onValueChange={field.onChange} defaultValue={field.value}>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select state" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {indianStates.map((state) => (
+                                  <SelectItem key={state} value={state}>
+                                    {state}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      {/* District */}
+                      <FormField
+                        control={devLoginForm.control}
+                        name="district"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>District</FormLabel>
+                            <FormControl>
+                              <Input
+                                placeholder="Enter district"
+                                {...field}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      {/* Pin Code */}
+                      <FormField
+                        control={devLoginForm.control}
+                        name="pinCode"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Pin Code</FormLabel>
+                            <FormControl>
+                              <Input
+                                placeholder="560001"
+                                {...field}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      {/* Expert Toggle */}
+                      <FormField
+                        control={devLoginForm.control}
+                        name="isExpert"
+                        render={({ field }) => (
+                          <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                            <FormControl>
+                              <Checkbox
+                                checked={field.value}
+                                onCheckedChange={field.onChange}
+                              />
+                            </FormControl>
+                            <div className="space-y-1 leading-none">
+                              <FormLabel>Register as Expert</FormLabel>
+                              <p className="text-sm text-muted-foreground">
+                                I can help others with my expertise
+                              </p>
+                            </div>
+                          </FormItem>
+                        )}
+                      />
+
+                      {/* UPI ID */}
+                      <FormField
+                        control={devLoginForm.control}
+                        name="upiId"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>UPI ID (Optional)</FormLabel>
+                            <FormControl>
+                              <Input
+                                placeholder="yourname@upi"
+                                {...field}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      {/* Bio */}
+                      <FormField
+                        control={devLoginForm.control}
+                        name="bio"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Bio (Optional)</FormLabel>
+                            <FormControl>
+                              <Textarea
+                                placeholder="Tell us about yourself..."
+                                {...field}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </CollapsibleContent>
+                  </Collapsible>
+
                   <Button type="submit" className="w-full">
                     Login for Development
                   </Button>

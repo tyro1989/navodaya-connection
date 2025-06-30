@@ -117,6 +117,7 @@ Navodaya Connection is a full-stack web application designed to connect Navodaya
 
 Changelog:
 - June 30, 2025. Initial setup
+- June 30, 2025. Added development mode authentication with optional registration fields
 
 ## User Preferences
 
