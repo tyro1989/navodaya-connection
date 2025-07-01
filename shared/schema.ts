@@ -7,6 +7,7 @@ export const users = pgTable("users", {
   phone: text("phone").notNull().unique(),
   name: text("name").notNull(),
   email: text("email"),
+  gender: text("gender"), // 'male', 'female', 'other', 'prefer-not-to-say'
   batchYear: integer("batch_year").notNull(),
   profession: text("profession").notNull(),
   professionOther: text("profession_other"),
@@ -34,9 +35,15 @@ export const requests = pgTable("requests", {
   userId: integer("user_id").references(() => users.id).notNull(),
   title: text("title").notNull(),
   description: text("description").notNull(),
-  expertiseRequired: text("expertise_required").notNull(),
-  urgency: text("urgency").notNull(), // 'urgent' or 'medium'
+  expertiseRequired: text("expertise_required"), // Made optional
+  urgency: text("urgency").notNull(), // 'critical', 'high', 'medium'
   helpType: text("help_type").notNull(), // 'general' or 'specific'
+  // Location where help is needed (optional)
+  helpLocationState: text("help_location_state"),
+  helpLocationDistrict: text("help_location_district"),
+  helpLocationPinCode: text("help_location_pin_code"),
+  helpLocationGps: text("help_location_gps"),
+  helpLocationNotApplicable: boolean("help_location_not_applicable").default(false),
   targetExpertId: integer("target_expert_id").references(() => users.id),
   status: text("status").default("open"), // 'open', 'in_progress', 'resolved', 'closed'
   attachments: text("attachments").array(),

@@ -3,9 +3,6 @@ import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import Navigation from "@/components/navigation";
 import RequestForm from "@/components/request-form";
 import ExpertCard from "@/components/expert-card";
@@ -16,10 +13,7 @@ import {
   HandHeart, 
   Clock, 
   Users, 
-  TrendingUp, 
-  Star,
-  Search,
-  Filter
+  Star
 } from "lucide-react";
 import type { ExpertWithStats, RequestWithUser } from "@shared/schema";
 import type { DashboardStats } from "@/lib/types";
@@ -27,9 +21,6 @@ import type { DashboardStats } from "@/lib/types";
 export default function Home() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
-  const [searchTerm, setSearchTerm] = useState("");
-  const [expertiseFilter, setExpertiseFilter] = useState("");
-  const [urgencyFilter, setUrgencyFilter] = useState("urgent");
 
   // Redirect to auth if not logged in
   useEffect(() => {
@@ -62,10 +53,10 @@ export default function Home() {
     return <div>Loading...</div>;
   }
 
-  const experts: ExpertWithStats[] = expertsData?.experts || [];
-  const allRequests: RequestWithUser[] = requestsData?.requests || [];
-  const userRequests: RequestWithUser[] = userRequestsData?.requests || [];
-  const stats: DashboardStats = statsData?.stats || {
+  const experts: ExpertWithStats[] = (expertsData as { experts: ExpertWithStats[] })?.experts || [];
+  const allRequests: RequestWithUser[] = (requestsData as { requests: RequestWithUser[] })?.requests || [];
+  const userRequests: RequestWithUser[] = (userRequestsData as { requests: RequestWithUser[] })?.requests || [];
+  const stats: DashboardStats = (statsData as { stats: DashboardStats })?.stats || {
     totalRequests: 0,
     activeExperts: 0,
     averageResponseTime: "0 mins",
@@ -88,16 +79,6 @@ export default function Home() {
   const handleViewRequest = (request: RequestWithUser) => {
     setLocation(`/request/${request.id}`);
   };
-
-  const expertiseOptions = [
-    "Medical/Healthcare",
-    "Engineering", 
-    "Education/Teaching",
-    "Legal",
-    "Business/Finance",
-    "IT/Technology",
-    "Other",
-  ];
 
   return (
     <div className="min-h-screen bg-gray-50">

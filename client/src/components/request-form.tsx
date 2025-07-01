@@ -8,39 +8,44 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { insertRequestSchema } from "@shared/schema";
 import { z } from "zod";
-import { Edit, NotebookPen, CloudUpload } from "lucide-react";
+import { Edit, NotebookPen, CloudUpload, MapPin, Navigation } from "lucide-react";
+import { EXPERTISE_CATEGORIES, INDIAN_STATES, INDIAN_DISTRICTS } from "@/lib/constants";
 
-const requestFormSchema = insertRequestSchema.extend({
-  helpType: z.enum(["general", "specific"]),
-});
-
-type RequestFormData = z.infer<typeof requestFormSchema>;
+type RequestFormData = z.infer<typeof insertRequestSchema>;
 
 export default function RequestForm() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [charCount, setCharCount] = useState(0);
+  const [gettingLocation, setGettingLocation] = useState(false);
 
   const form = useForm<RequestFormData>({
-    resolver: zodResolver(requestFormSchema),
+    resolver: zodResolver(insertRequestSchema),
     defaultValues: {
       title: "",
       description: "",
-      expertiseRequired: "",
+      expertiseRequired: "none",
       urgency: "medium",
       helpType: "general",
+      helpLocationState: "",
+      helpLocationDistrict: "",
+      helpLocationPinCode: "",
+      helpLocationGps: "",
+      helpLocationNotApplicable: false,
       attachments: [],
     },
   });
 
   const createRequestMutation = useMutation({
     mutationFn: async (data: RequestFormData) => {
+      console.log("Submitting request data:", data);
       const response = await apiRequest("POST", "/api/requests", data);
       return response.json();
     },
@@ -51,9 +56,13 @@ export default function RequestForm() {
       });
       form.reset();
       setCharCount(0);
-      queryClient.invalidateQueries({ queryKey: ["/api/requests"] });
+      queryClient.invalidateQueries({ 
+        predicate: (query) => 
+          typeof query.queryKey[0] === 'string' && query.queryKey[0].includes('/api/requests')
+      });
     },
     onError: (error: any) => {
+      console.error("Request submission error:", error);
       toast({
         title: "Failed to post request",
         description: error.message || "Please try again.",
@@ -63,18 +72,55 @@ export default function RequestForm() {
   });
 
   const onSubmit = (data: RequestFormData) => {
+    console.log("Form submitted with data:", data);
     createRequestMutation.mutate(data);
   };
 
-  const expertiseOptions = [
-    "Medical/Healthcare",
-    "Engineering",
-    "Education/Teaching",
-    "Legal",
-    "Business/Finance",
-    "IT/Technology",
-    "Other",
-  ];
+  const getCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      toast({
+        title: "Location not supported",
+        description: "Your browser doesn't support location services.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setGettingLocation(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        form.setValue("helpLocationGps", `${latitude},${longitude}`);
+        setGettingLocation(false);
+        toast({
+          title: "Location captured",
+          description: "Your current location has been added to the request.",
+        });
+      },
+      (error) => {
+        setGettingLocation(false);
+        toast({
+          title: "Location access denied",
+          description: "Please enable location access or enter location manually.",
+          variant: "destructive",
+        });
+      }
+    );
+  };
+
+  const urgencyColors = {
+    critical: "bg-red-100 text-red-800",
+    high: "bg-orange-100 text-orange-800",
+    medium: "bg-yellow-100 text-yellow-800",
+  };
+
+  const urgencyDescriptions = {
+    critical: "Need immediate assistance (within hours)",
+    high: "Need help within 24 hours",
+    medium: "Can wait a few days",
+  };
+
+  const isLocationNotApplicable = form.watch("helpLocationNotApplicable");
 
   return (
     <Card className="shadow-sm border border-gray-100">
@@ -136,21 +182,25 @@ export default function RequestForm() {
                 name="expertiseRequired"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Expertise Required*</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <FormLabel>Expertise Required (Optional)</FormLabel>
+                                                                <Select onValueChange={field.onChange} value={field.value ?? "none"}>
                       <FormControl>
                         <SelectTrigger>
-                          <SelectValue placeholder="Select expertise area" />
+                          <SelectValue placeholder="Select expertise area (optional)" />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {expertiseOptions.map((option) => (
+                        <SelectItem value="none">No specific expertise needed</SelectItem>
+                        {EXPERTISE_CATEGORIES.map((option) => (
                           <SelectItem key={option} value={option}>
                             {option}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
+                    <FormDescription>
+                      Leave blank if you need general advice from anyone
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -169,14 +219,150 @@ export default function RequestForm() {
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="medium">Medium Priority</SelectItem>
-                        <SelectItem value="urgent">Urgent - Need immediate help</SelectItem>
+                        {Object.entries(urgencyDescriptions).map(([value, description]) => (
+                          <SelectItem key={value} value={value}>
+                            <div className="flex items-center space-x-2">
+                              <span className={`px-2 py-1 rounded-full text-xs ${urgencyColors[value as keyof typeof urgencyColors]}`}>
+                                {value}
+                              </span>
+                              <span className="text-sm">{description}</span>
+                            </div>
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                     <FormMessage />
                   </FormItem>
                 )}
               />
+            </div>
+
+            {/* Location where help is needed */}
+            <div className="space-y-4">
+              <div className="flex items-center space-x-2">
+                <MapPin className="h-4 w-4 text-gray-600" />
+                <Label className="text-sm font-medium text-gray-700">Where do you need help? (Optional)</Label>
+              </div>
+              
+              <FormField
+                control={form.control}
+                name="helpLocationNotApplicable"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                    <FormControl>
+                      <Checkbox
+                        checked={field.value || false}
+                        onCheckedChange={(checked) => {
+                          field.onChange(checked);
+                          if (checked) {
+                            // Clear location fields when "not applicable" is checked
+                            form.setValue("helpLocationState", "");
+                            form.setValue("helpLocationDistrict", "");
+                            form.setValue("helpLocationPinCode", "");
+                            form.setValue("helpLocationGps", "");
+                          }
+                        }}
+                      />
+                    </FormControl>
+                    <div className="space-y-1 leading-none">
+                      <FormLabel>
+                        Location not applicable (e.g., online help, advice, etc.)
+                      </FormLabel>
+                    </div>
+                  </FormItem>
+                )}
+              />
+
+              {!isLocationNotApplicable && (
+                <div className="grid md:grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="helpLocationState"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>State</FormLabel>
+                                                 <Select onValueChange={field.onChange} value={field.value ?? ""}>
+                           <FormControl>
+                             <SelectTrigger>
+                               <SelectValue placeholder="Select state" />
+                             </SelectTrigger>
+                           </FormControl>
+                          <SelectContent>
+                            {INDIAN_STATES.map((state) => (
+                              <SelectItem key={state} value={state}>
+                                {state}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="helpLocationDistrict"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>District</FormLabel>
+                                                 <Select 
+                           onValueChange={field.onChange} 
+                           value={field.value ?? ""} 
+                           disabled={!form.watch("helpLocationState")}
+                         >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder={form.watch("helpLocationState") ? "Select district" : "Select state first"} />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {form.watch("helpLocationState") && INDIAN_DISTRICTS[form.watch("helpLocationState") as keyof typeof INDIAN_DISTRICTS]?.map((district: string) => (
+                              <SelectItem key={district} value={district}>
+                                {district}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="helpLocationPinCode"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>PIN Code</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="e.g., 560001"
+                            {...field}
+                            value={field.value ?? ""}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <div className="flex items-end">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={getCurrentLocation}
+                      disabled={gettingLocation}
+                      className="w-full flex items-center space-x-2"
+                    >
+                      <Navigation className="h-4 w-4" />
+                      <span>
+                        {gettingLocation ? "Getting location..." : "Use current location"}
+                      </span>
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
 
             <FormField
@@ -233,7 +419,10 @@ export default function RequestForm() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => form.reset()}
+                onClick={() => {
+                  form.reset();
+                  setCharCount(0);
+                }}
               >
                 Clear
               </Button>

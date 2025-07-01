@@ -37,22 +37,27 @@ export default function ExpertDashboard() {
     queryKey: ["/api/stats/expert", user.id],
   });
 
-  const requests: RequestWithUser[] = requestsData?.requests || [];
-  const stats: ExpertStats | undefined = statsData?.stats;
+  const requests: RequestWithUser[] = (requestsData as { requests: RequestWithUser[] })?.requests || [];
+  const stats: ExpertStats | undefined = (statsData as { stats: ExpertStats })?.stats;
 
   // Filter requests by expertise and status
   const relevantRequests = requests.filter(request => {
     if (request.status === "resolved") return false;
+    
+    // If no specific expertise is required, show to all experts
+    if (!request.expertiseRequired || request.expertiseRequired === "none") return true;
+    
+    // If user has no expertise areas defined, show all requests
     if (!user.expertiseAreas) return true;
     
     return user.expertiseAreas.some(area => 
-      request.expertiseRequired.toLowerCase().includes(area.toLowerCase()) ||
-      area.toLowerCase().includes(request.expertiseRequired.toLowerCase())
+      request.expertiseRequired?.toLowerCase().includes(area.toLowerCase()) ||
+      area.toLowerCase().includes(request.expertiseRequired?.toLowerCase() || "")
     );
   });
 
-  const urgentRequests = relevantRequests.filter(r => r.urgency === "urgent");
-  const regularRequests = relevantRequests.filter(r => r.urgency === "medium");
+  const urgentRequests = relevantRequests.filter(r => r.urgency === "critical" || r.urgency === "urgent");
+  const regularRequests = relevantRequests.filter(r => r.urgency === "medium" || r.urgency === "high");
 
   const handleViewRequest = (request: RequestWithUser) => {
     setLocation(`/request/${request.id}`);

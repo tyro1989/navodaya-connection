@@ -14,7 +14,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Phone number is required" });
       }
       
-      // Generate 6-digit OTP
+      // For development phone number, use mock OTP
+      if (process.env.NODE_ENV === "development" && phone === "+919999999999") {
+        await storage.createOtpVerification({
+          phone,
+          otp: "123456", // Mock OTP for development
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours for dev
+        });
+        
+        return res.json({ 
+          message: "OTP sent successfully",
+          otp: "123456" // Return mock OTP for development
+        });
+      }
+      
+      // Generate 6-digit OTP for regular flow
       const otp = Math.floor(100000 + Math.random() * 900000).toString();
       const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
       
@@ -38,6 +52,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/auth/verify-otp", async (req, res) => {
     try {
       const { phone, otp } = req.body;
+      
+      // Handle development mode mock OTP
+      if (process.env.NODE_ENV === "development" && phone === "+919999999999" && otp === "123456") {
+        // Check if user exists
+        const existingUser = await storage.getUserByPhone(phone);
+        if (existingUser) {
+          req.session.userId = existingUser.id;
+          return res.json({ user: existingUser, isNewUser: false });
+        }
+        return res.json({ message: "OTP verified", isNewUser: true });
+      }
       
       const isValid = await storage.verifyOtp(phone, otp);
       if (!isValid) {
@@ -140,6 +165,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Request routes
   app.post("/api/requests", async (req, res) => {
     try {
+      console.log("POST /api/requests - User ID:", req.session.userId);
+      console.log("POST /api/requests - Request body:", req.body);
+      
       if (!req.session.userId) {
         return res.status(401).json({ message: "Not authenticated" });
       }
@@ -149,10 +177,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         userId: req.session.userId
       });
       
+      console.log("POST /api/requests - Parsed request data:", requestData);
+      
       const request = await storage.createRequest(requestData);
+      console.log("POST /api/requests - Created request:", request);
+      
       res.json({ request });
     } catch (error) {
+      console.error("POST /api/requests - Error:", error);
       if (error instanceof z.ZodError) {
+        console.error("POST /api/requests - Validation errors:", error.errors);
         return res.status(400).json({ message: "Invalid request data", errors: error.errors });
       }
       res.status(500).json({ message: "Failed to create request" });
@@ -161,17 +195,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/requests", async (req, res) => {
     try {
+      console.log("GET /api/requests - Query params:", req.query);
+      console.log("GET /api/requests - Session user ID:", req.session.userId);
+      
       const { userId, status } = req.query;
       let requests;
       
       if (userId) {
+        console.log("Getting requests for specific user:", userId);
         requests = await storage.getRequestsByUserId(parseInt(userId as string));
       } else {
+        console.log("Getting all open requests");
         requests = await storage.getOpenRequests();
       }
       
+      console.log("GET /api/requests - Found requests:", requests.length);
+      console.log("GET /api/requests - Requests data:", requests);
+      
       res.json({ requests });
     } catch (error) {
+      console.error("GET /api/requests - Error:", error);
       res.status(500).json({ message: "Failed to get requests" });
     }
   });

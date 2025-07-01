@@ -7,6 +7,7 @@ import { AuthProvider } from "./lib/auth";
 import Home from "@/pages/home";
 import Auth from "@/pages/auth";
 import ExpertDashboard from "@/pages/expert-dashboard";
+import MyRequests from "@/pages/my-requests";
 import RequestDetail from "@/pages/request-detail";
 import Profile from "@/pages/profile";
 import NotFound from "@/pages/not-found";
@@ -17,6 +18,7 @@ function Router() {
       <Route path="/" component={Home} />
       <Route path="/auth" component={Auth} />
       <Route path="/expert-dashboard" component={ExpertDashboard} />
+      <Route path="/my-requests" component={MyRequests} />
       <Route path="/request/:id" component={RequestDetail} />
       <Route path="/profile" component={Profile} />
       <Route component={NotFound} />

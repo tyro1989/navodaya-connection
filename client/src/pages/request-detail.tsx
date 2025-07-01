@@ -85,8 +85,8 @@ export default function RequestDetail() {
     );
   }
 
-  const request: RequestWithUser | undefined = requestData?.request;
-  const responses: ResponseWithExpert[] = responsesData?.responses || [];
+  const request: RequestWithUser | undefined = (requestData as { request: RequestWithUser })?.request;
+  const responses: ResponseWithExpert[] = (responsesData as { responses: ResponseWithExpert[] })?.responses || [];
 
   if (!request) {
     return (
@@ -109,7 +109,7 @@ export default function RequestDetail() {
     );
   }
 
-  const isUrgent = request.urgency === "urgent";
+  const isUrgent = request.urgency === "urgent" || request.urgency === "critical";
   const isResolved = request.status === "resolved";
   const canRespond = user?.isExpert && request.userId !== user.id && !isResolved;
 
@@ -201,7 +201,7 @@ export default function RequestDetail() {
             <div className="mb-6">
               <h4 className="font-semibold text-gray-900 mb-3">Expertise Required</h4>
               <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20">
-                {request.expertiseRequired}
+                {!request.expertiseRequired || request.expertiseRequired === "none" ? "No specific expertise needed" : request.expertiseRequired}
               </Badge>
             </div>
 

@@ -57,7 +57,7 @@ export default function RequestCard({ request, onViewClick, showUserInfo = true 
         
         <div className="flex items-center text-sm text-gray-500 mb-3">
           <Badge variant="outline" className="mr-3">
-            {request.expertiseRequired}
+            {!request.expertiseRequired || request.expertiseRequired === "none" ? "General help" : request.expertiseRequired}
           </Badge>
           <Clock className="h-3 w-3 mr-1" />
           <span>

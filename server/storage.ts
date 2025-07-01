@@ -253,6 +253,7 @@ export class MemStorage implements IStorage {
   }
 
   async createRequest(insertRequest: InsertRequest): Promise<Request> {
+    console.log("Storage.createRequest - Input data:", insertRequest);
     const request: Request = {
       ...insertRequest,
       id: this.currentRequestId++,
@@ -261,7 +262,9 @@ export class MemStorage implements IStorage {
       createdAt: new Date(),
       updatedAt: new Date()
     };
+    console.log("Storage.createRequest - Created request:", request);
     this.requests.set(request.id, request);
+    console.log("Storage.createRequest - Total requests in storage:", this.requests.size);
     return request;
   }
 
@@ -311,7 +314,11 @@ export class MemStorage implements IStorage {
   }
 
   async getOpenRequests(limit = 20): Promise<RequestWithUser[]> {
-    const openRequests = Array.from(this.requests.values())
+    console.log("Storage.getOpenRequests - Total requests in storage:", this.requests.size);
+    const allRequests = Array.from(this.requests.values());
+    console.log("Storage.getOpenRequests - All requests:", allRequests);
+    
+    const openRequests = allRequests
       .filter(request => request.status === "open")
       .sort((a, b) => {
         // Sort by urgency first, then by creation time
@@ -320,6 +327,8 @@ export class MemStorage implements IStorage {
         return b.createdAt!.getTime() - a.createdAt!.getTime();
       })
       .slice(0, limit);
+    
+    console.log("Storage.getOpenRequests - Filtered open requests:", openRequests.length);
     
     return Promise.all(openRequests.map(async request => {
       const user = this.users.get(request.userId);

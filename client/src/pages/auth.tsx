@@ -16,60 +16,18 @@ import { useAuth } from "@/lib/auth";
 import { insertUserSchema } from "@shared/schema";
 import { z } from "zod";
 import { GraduationCap, Phone, UserPlus, ChevronDown } from "lucide-react";
+import { 
+  PROFESSION_CATEGORIES, 
+  HELP_AREAS_CATEGORIES, 
+  EXPERTISE_CATEGORIES,
+  INDIAN_STATES,
+  INDIAN_DISTRICTS 
+} from "@/lib/constants";
 
 // Development mode check
 const isDevelopment = import.meta.env.MODE === 'development';
 
-// Indian States and Districts Data
-const indianStates = [
-  "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh",
-  "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand",
-  "Karnataka", "Kerala", "Madhya Pradesh", "Maharashtra", "Manipur",
-  "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Punjab",
-  "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura",
-  "Uttar Pradesh", "Uttarakhand", "West Bengal",
-  "Delhi", "Jammu and Kashmir", "Ladakh", "Chandigarh", "Dadra and Nagar Haveli and Daman and Diu",
-  "Lakshadweep", "Puducherry", "Andaman and Nicobar Islands"
-];
 
-const indianDistricts: { [key: string]: string[] } = {
-  "Andhra Pradesh": ["Anantapur", "Chittoor", "East Godavari", "Guntur", "Krishna", "Kurnool", "Prakasam", "Srikakulam", "Visakhapatnam", "Vizianagaram", "West Godavari", "YSR Kadapa"],
-  "Arunachal Pradesh": ["Anjaw", "Changlang", "Dibang Valley", "East Kameng", "East Siang", "Kamle", "Kra Daadi", "Kurung Kumey", "Lepa Rada", "Lohit", "Longding", "Lower Dibang Valley", "Lower Siang", "Lower Subansiri", "Namsai", "Pakke Kessang", "Papum Pare", "Shi Yomi", "Siang", "Tawang", "Tirap", "Upper Siang", "Upper Subansiri", "West Kameng", "West Siang"],
-  "Assam": ["Baksa", "Barpeta", "Biswanath", "Bongaigaon", "Cachar", "Charaideo", "Chirang", "Darrang", "Dhemaji", "Dhubri", "Dibrugarh", "Dima Hasao", "Goalpara", "Golaghat", "Hailakandi", "Hojai", "Jorhat", "Kamrup", "Kamrup Metropolitan", "Karbi Anglong", "Karimganj", "Kokrajhar", "Lakhimpur", "Majuli", "Morigaon", "Nagaon", "Nalbari", "Sivasagar", "Sonitpur", "South Salmara-Mankachar", "Tinsukia", "Udalguri", "West Karbi Anglong"],
-  "Bihar": ["Araria", "Arwal", "Aurangabad", "Banka", "Begusarai", "Bhagalpur", "Bhojpur", "Buxar", "Darbhanga", "East Champaran", "Gaya", "Gopalganj", "Jamui", "Jehanabad", "Kaimur", "Katihar", "Khagaria", "Kishanganj", "Lakhisarai", "Madhepura", "Madhubani", "Munger", "Muzaffarpur", "Nalanda", "Nawada", "Patna", "Purnia", "Rohtas", "Saharsa", "Samastipur", "Saran", "Sheikhpura", "Sheohar", "Sitamarhi", "Siwan", "Supaul", "Vaishali", "West Champaran"],
-  "Chhattisgarh": ["Balod", "Baloda Bazar", "Balrampur", "Bastar", "Bemetara", "Bijapur", "Bilaspur", "Dantewada", "Dhamtari", "Durg", "Gariaband", "Janjgir-Champa", "Jashpur", "Kabirdham", "Kanker", "Kondagaon", "Korba", "Koriya", "Mahasamund", "Mungeli", "Narayanpur", "Raigarh", "Raipur", "Rajnandgaon", "Sukma", "Surajpur", "Surguja"],
-  "Goa": ["North Goa", "South Goa"],
-  "Gujarat": ["Ahmedabad", "Amreli", "Anand", "Aravalli", "Banaskantha", "Bharuch", "Bhavnagar", "Botad", "Chhota Udaipur", "Dahod", "Dang", "Devbhoomi Dwarka", "Gandhinagar", "Gir Somnath", "Jamnagar", "Junagadh", "Kheda", "Kutch", "Mahisagar", "Mehsana", "Morbi", "Narmada", "Navsari", "Panchmahal", "Patan", "Porbandar", "Rajkot", "Sabarkantha", "Surat", "Surendranagar", "Tapi", "Vadodara", "Valsad"],
-  "Haryana": ["Ambala", "Bhiwani", "Charkhi Dadri", "Faridabad", "Fatehabad", "Gurugram", "Hisar", "Jhajjar", "Jind", "Kaithal", "Karnal", "Kurukshetra", "Mahendragarh", "Nuh", "Palwal", "Panchkula", "Panipat", "Rewari", "Rohtak", "Sirsa", "Sonipat", "Yamunanagar"],
-  "Himachal Pradesh": ["Bilaspur", "Chamba", "Hamirpur", "Kangra", "Kinnaur", "Kullu", "Lahaul and Spiti", "Mandi", "Shimla", "Sirmaur", "Solan", "Una"],
-  "Jharkhand": ["Bokaro", "Chatra", "Deoghar", "Dhanbad", "Dumka", "East Singhbhum", "Garhwa", "Giridih", "Godda", "Gumla", "Hazaribagh", "Jamtara", "Khunti", "Koderma", "Latehar", "Lohardaga", "Pakur", "Palamu", "Ramgarh", "Ranchi", "Sahebganj", "Seraikela Kharsawan", "Simdega", "West Singhbhum"],
-  "Karnataka": ["Bagalkot", "Ballari", "Belagavi", "Bengaluru Rural", "Bengaluru Urban", "Bidar", "Chamarajanagar", "Chikballapur", "Chikkamagaluru", "Chitradurga", "Dakshina Kannada", "Davanagere", "Dharwad", "Gadag", "Hassan", "Haveri", "Kalaburagi", "Kodagu", "Kolar", "Koppal", "Mandya", "Mysuru", "Raichur", "Ramanagara", "Shivamogga", "Tumakuru", "Udupi", "Uttara Kannada", "Vijayapura", "Yadgir"],
-  "Kerala": ["Alappuzha", "Ernakulam", "Idukki", "Kannur", "Kasaragod", "Kollam", "Kottayam", "Kozhikode", "Malappuram", "Palakkad", "Pathanamthitta", "Thiruvananthapuram", "Thrissur", "Wayanad"],
-  "Madhya Pradesh": ["Agar Malwa", "Alirajpur", "Anuppur", "Ashoknagar", "Balaghat", "Barwani", "Betul", "Bhind", "Bhopal", "Burhanpur", "Chhatarpur", "Chhindwara", "Damoh", "Datia", "Dewas", "Dhar", "Dindori", "Guna", "Gwalior", "Harda", "Hoshangabad", "Indore", "Jabalpur", "Jhabua", "Katni", "Khandwa", "Khargone", "Mandla", "Mandsaur", "Morena", "Narsinghpur", "Neemuch", "Panna", "Raisen", "Rajgarh", "Ratlam", "Rewa", "Sagar", "Satna", "Sehore", "Seoni", "Shahdol", "Shajapur", "Sheopur", "Shivpuri", "Sidhi", "Singrauli", "Tikamgarh", "Ujjain", "Umaria", "Vidisha"],
-  "Maharashtra": ["Ahmednagar", "Akola", "Amravati", "Aurangabad", "Beed", "Bhandara", "Buldhana", "Chandrapur", "Dhule", "Gadchiroli", "Gondia", "Hingoli", "Jalgaon", "Jalna", "Kolhapur", "Latur", "Mumbai City", "Mumbai Suburban", "Nagpur", "Nanded", "Nashik", "Osmanabad", "Palghar", "Parbhani", "Pune", "Raigad", "Ratnagiri", "Sangli", "Satara", "Sindhudurg", "Solapur", "Thane", "Wardha", "Washim", "Yavatmal"],
-  "Manipur": ["Bishnupur", "Chandel", "Churachandpur", "Imphal East", "Imphal West", "Jiribam", "Kakching", "Kamjong", "Kangpokpi", "Noney", "Pherzawl", "Senapati", "Tamenglong", "Tengnoupal", "Thoubal", "Ukhrul"],
-  "Meghalaya": ["East Garo Hills", "East Jaintia Hills", "East Khasi Hills", "North Garo Hills", "Ri Bhoi", "South Garo Hills", "South West Garo Hills", "South West Khasi Hills", "West Garo Hills", "West Jaintia Hills", "West Khasi Hills"],
-  "Mizoram": ["Aizawl", "Champhai", "Hnahthial", "Khawzawl", "Kolasib", "Lawngtlai", "Lunglei", "Mamit", "Saiha", "Saitual", "Serchhip"],
-  "Nagaland": ["Dimapur", "Kiphire", "Kohima", "Longleng", "Mokokchung", "Mon", "Peren", "Phek", "Tuensang", "Wokha", "Zunheboto"],
-  "Odisha": ["Angul", "Balangir", "Balasore", "Bargarh", "Bhadrak", "Bhubaneswar", "Boudh", "Cuttack", "Deogarh", "Dhenkanal", "Gajapati", "Ganjam", "Jagatsinghpur", "Jajpur", "Jharsuguda", "Kalahandi", "Kandhamal", "Kendrapara", "Kendujhar", "Khordha", "Koraput", "Malkangiri", "Mayurbhanj", "Nabarangpur", "Nayagarh", "Nuapada", "Puri", "Rayagada", "Sambalpur", "Subarnapur", "Sundargarh"],
-  "Punjab": ["Amritsar", "Barnala", "Bathinda", "Faridkot", "Fatehgarh Sahib", "Fazilka", "Ferozepur", "Gurdaspur", "Hoshiarpur", "Jalandhar", "Kapurthala", "Ludhiana", "Mansa", "Moga", "Muktsar", "Pathankot", "Patiala", "Rupnagar", "Sahibzada Ajit Singh Nagar", "Sangrur", "Shahid Bhagat Singh Nagar", "Tarn Taran"],
-  "Rajasthan": ["Ajmer", "Alwar", "Banswara", "Baran", "Barmer", "Bharatpur", "Bhilwara", "Bikaner", "Bundi", "Chittorgarh", "Churu", "Dausa", "Dholpur", "Dungarpur", "Hanumangarh", "Jaipur", "Jaisalmer", "Jalore", "Jhalawar", "Jhunjhunu", "Jodhpur", "Karauli", "Kota", "Nagaur", "Pali", "Pratapgarh", "Rajsamand", "Sawai Madhopur", "Sikar", "Sirohi", "Sri Ganganagar", "Tonk", "Udaipur"],
-  "Sikkim": ["East Sikkim", "North Sikkim", "South Sikkim", "West Sikkim"],
-  "Tamil Nadu": ["Ariyalur", "Chennai", "Coimbatore", "Cuddalore", "Dharmapuri", "Dindigul", "Erode", "Kanchipuram", "Kanyakumari", "Karur", "Krishnagiri", "Madurai", "Mayiladuthurai", "Nagapattinam", "Namakkal", "Nilgiris", "Perambalur", "Pudukkottai", "Ramanathapuram", "Ranipet", "Salem", "Sivaganga", "Tenkasi", "Thanjavur", "Theni", "Thoothukkudi", "Tiruchirappalli", "Tirunelveli", "Tiruppur", "Tiruvallur", "Tiruvannamalai", "Tiruvarur", "Vellore", "Viluppuram", "Virudhunagar"],
-  "Telangana": ["Adilabad", "Bhadradri Kothagudem", "Hyderabad", "Jagtial", "Jangaon", "Jayashankar Bhupalpally", "Jogulamba Gadwal", "Kamareddy", "Karimnagar", "Khammam", "Kumuram Bheem", "Mahabubabad", "Mahabubnagar", "Mancherial", "Medak", "Medchal-Malkajgiri", "Mulugu", "Nagarkurnool", "Nalgonda", "Narayanpet", "Nirmal", "Nizamabad", "Peddapalli", "Rajanna Sircilla", "Rangareddy", "Sangareddy", "Siddipet", "Suryapet", "Vikarabad", "Wanaparthy", "Warangal Rural", "Warangal Urban", "Yadadri Bhuvanagiri"],
-  "Tripura": ["Dhalai", "Gomati", "Khowai", "North Tripura", "Sepahijala", "South Tripura", "Unakoti", "West Tripura"],
-  "Uttar Pradesh": ["Agra", "Aligarh", "Ambedkar Nagar", "Amethi", "Amroha", "Auraiya", "Ayodhya", "Azamgarh", "Baghpat", "Bahraich", "Ballia", "Balrampur", "Banda", "Barabanki", "Bareilly", "Basti", "Bhadohi", "Bijnor", "Budaun", "Bulandshahr", "Chandauli", "Chitrakoot", "Deoria", "Etah", "Etawah", "Farrukhabad", "Fatehpur", "Firozabad", "Gautam Buddha Nagar", "Ghaziabad", "Ghazipur", "Gonda", "Gorakhpur", "Hamirpur", "Hapur", "Hardoi", "Hathras", "Jalaun", "Jaunpur", "Jhansi", "Kannauj", "Kanpur Dehat", "Kanpur Nagar", "Kasganj", "Kaushambi", "Kushinagar", "Lakhimpur Kheri", "Lalitpur", "Lucknow", "Maharajganj", "Mahoba", "Mainpuri", "Mathura", "Mau", "Meerut", "Mirzapur", "Moradabad", "Muzaffarnagar", "Pilibhit", "Pratapgarh", "Prayagraj", "Raebareli", "Rampur", "Saharanpur", "Sambhal", "Sant Kabir Nagar", "Shahjahanpur", "Shamli", "Shravasti", "Siddharthnagar", "Sitapur", "Sonbhadra", "Sultanpur", "Unnao", "Varanasi"],
-  "Uttarakhand": ["Almora", "Bageshwar", "Chamoli", "Champawat", "Dehradun", "Haridwar", "Nainital", "Pauri Garhwal", "Pithoragarh", "Rudraprayag", "Tehri Garhwal", "Udham Singh Nagar", "Uttarkashi"],
-  "West Bengal": ["Alipurduar", "Bankura", "Birbhum", "Cooch Behar", "Dakshin Dinajpur", "Darjeeling", "Hooghly", "Howrah", "Jalpaiguri", "Jhargram", "Kalimpong", "Kolkata", "Malda", "Murshidabad", "Nadia", "North 24 Parganas", "Paschim Bardhaman", "Paschim Medinipur", "Purba Bardhaman", "Purba Medinipur", "Purulia", "South 24 Parganas", "Uttar Dinajpur"],
-  "Delhi": ["Central Delhi", "East Delhi", "New Delhi", "North Delhi", "North East Delhi", "North West Delhi", "Shahdara", "South Delhi", "South East Delhi", "South West Delhi", "West Delhi"],
-  "Jammu and Kashmir": ["Anantnag", "Bandipora", "Baramulla", "Budgam", "Doda", "Ganderbal", "Jammu", "Kathua", "Kishtwar", "Kulgam", "Kupwara", "Poonch", "Pulwama", "Rajouri", "Ramban", "Reasi", "Samba", "Shopian", "Srinagar", "Udhampur"],
-  "Ladakh": ["Kargil", "Leh"],
-  "Chandigarh": ["Chandigarh"],
-  "Dadra and Nagar Haveli and Daman and Diu": ["Dadra and Nagar Haveli", "Daman", "Diu"],
-  "Lakshadweep": ["Lakshadweep"],
-  "Puducherry": ["Karaikal", "Mahe", "Puducherry", "Yanam"],
-  "Andaman and Nicobar Islands": ["Nicobars", "North and Middle Andaman", "South Andaman"]
-};
 
 const phoneSchema = z.object({
   phone: z.string().min(10, "Phone number must be at least 10 digits"),
@@ -177,6 +135,28 @@ export default function Auth() {
     try {
       // Create a mock phone number for development
       const mockPhone = "+919999999999";
+      
+      // First, try to send OTP to check if user exists
+      try {
+        await sendOtp(mockPhone);
+        // If user exists, login with a mock OTP
+        const mockOtp = "123456";
+        const loginResult = await login(mockPhone, mockOtp);
+        
+        if (!loginResult.isNewUser) {
+          // User exists, update their profile with new dev login data if needed
+          toast({
+            title: "Development Login Successful!",
+            description: "You've been logged in with existing account for development testing.",
+          });
+          setLocation("/");
+          return;
+        }
+      } catch (error) {
+        // If sendOtp fails, user might not exist, continue with registration
+      }
+      
+      // If we reach here, create a new user
       const userData = {
         phone: mockPhone,
         name: data.name,
@@ -281,39 +261,9 @@ export default function Auth() {
     }
   };
 
-  const expertiseOptions = [
-    "Medical/Healthcare",
-    "Engineering",
-    "Education/Teaching",
-    "Legal",
-    "Business/Finance",
-    "IT/Technology",
-    "Agriculture",
-    "Government/Civil Services",
-    "Research/Science",
-    "Other",
-  ];
-
+  // Use imported constants for consistency across the app
   const currentYear = new Date().getFullYear();
   const batchYears = Array.from({ length: 30 }, (_, i) => currentYear - i);
-
-  const professionOptions = [
-    "Farming",
-    "Studying",
-    "Other"
-  ];
-
-  const helpAreasOptions = [
-    "Healthcare & Medicine",
-    "Engineering & Tech",
-    "Education & Research",
-    "Business & Management",
-    "Finance & Accounting",
-    "Public Service & Administration",
-    "Agriculture & Farming",
-    "Media & Entertainment",
-    "Other"
-  ];
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
@@ -366,13 +316,13 @@ export default function Auth() {
                     name="batchYear"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>JNV Batch Year *</FormLabel>
+                        <FormLabel>12th Passing Year *</FormLabel>
                         <Select
                           onValueChange={(value) => field.onChange(parseInt(value))}
                           defaultValue={field.value?.toString()}
                         >
                           <SelectTrigger>
-                            <SelectValue placeholder="Select your batch year" />
+                            <SelectValue placeholder="Select your 12th passing year" />
                           </SelectTrigger>
                           <SelectContent>
                             {batchYears.map((year) => (
@@ -382,6 +332,9 @@ export default function Auth() {
                             ))}
                           </SelectContent>
                         </Select>
+                        <p className="text-sm text-muted-foreground">
+                          Enter the year you would have passed 12th, even if you left JNV before completing 12th
+                        </p>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -399,7 +352,7 @@ export default function Auth() {
                             <SelectValue placeholder="Select your JNV state" />
                           </SelectTrigger>
                           <SelectContent>
-                            {indianStates.map((state) => (
+                            {INDIAN_STATES.map((state) => (
                               <SelectItem key={state} value={state}>
                                 {state}
                               </SelectItem>
@@ -418,12 +371,20 @@ export default function Auth() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>JNV District *</FormLabel>
-                        <FormControl>
-                          <Input
-                            placeholder="Enter your JNV district"
-                            {...field}
-                          />
-                        </FormControl>
+                        <Select onValueChange={field.onChange} value={field.value} disabled={!devLoginForm.watch("state")}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder={devLoginForm.watch("state") ? "Select your JNV district" : "Select state first"} />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {devLoginForm.watch("state") && INDIAN_DISTRICTS[devLoginForm.watch("state") as keyof typeof INDIAN_DISTRICTS]?.map((district: string) => (
+                              <SelectItem key={district} value={district}>
+                                {district}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -444,7 +405,7 @@ export default function Auth() {
                         name="email"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Email (Optional)</FormLabel>
+                            <FormLabel>Email</FormLabel>
                             <FormControl>
                               <Input
                                 placeholder="your.email@example.com"
@@ -463,13 +424,13 @@ export default function Auth() {
                         name="profession"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Profession (Optional)</FormLabel>
+                            <FormLabel>Profession</FormLabel>
                             <Select onValueChange={field.onChange} defaultValue={field.value}>
                               <SelectTrigger>
                                 <SelectValue placeholder="Select profession" />
                               </SelectTrigger>
                               <SelectContent>
-                                {professionOptions.map((profession) => (
+                                {PROFESSION_CATEGORIES.map((profession) => (
                                   <SelectItem key={profession} value={profession}>
                                     {profession}
                                   </SelectItem>
@@ -487,7 +448,7 @@ export default function Auth() {
                         name="pinCode"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Pin Code (Optional)</FormLabel>
+                            <FormLabel>Pin Code</FormLabel>
                             <FormControl>
                               <Input
                                 placeholder="560001"
@@ -512,32 +473,37 @@ export default function Auth() {
                               />
                             </FormControl>
                             <div className="space-y-1 leading-none">
-                              <FormLabel>Register as Expert</FormLabel>
+                              <FormLabel>I want to help with my expertise</FormLabel>
                               <p className="text-sm text-muted-foreground">
-                                I can help others with my expertise
+                                I can help others with my knowledge and experience
                               </p>
                             </div>
                           </FormItem>
                         )}
                       />
 
-                      {/* UPI ID */}
-                      <FormField
-                        control={devLoginForm.control}
-                        name="upiId"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>UPI ID (Optional)</FormLabel>
-                            <FormControl>
-                              <Input
-                                placeholder="yourname@upi"
-                                {...field}
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
+                      {/* UPI ID - Only show when expert is checked */}
+                      {devLoginForm.watch("isExpert") && (
+                        <FormField
+                          control={devLoginForm.control}
+                          name="upiId"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>UPI ID</FormLabel>
+                              <FormControl>
+                                <Input
+                                  placeholder="yourname@paytm"
+                                  {...field}
+                                />
+                              </FormControl>
+                              <p className="text-sm text-muted-foreground">
+                                Some users may send you money as a token of thanks once you help
+                              </p>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      )}
 
                       {/* Bio */}
                       <FormField
@@ -545,7 +511,7 @@ export default function Auth() {
                         name="bio"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Bio (Optional)</FormLabel>
+                            <FormLabel>Bio</FormLabel>
                             <FormControl>
                               <Textarea
                                 placeholder="Tell us about yourself..."
@@ -741,56 +707,60 @@ export default function Auth() {
                     )}
                   />
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <FormField
-                      control={registrationForm.control}
-                      name="state"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>State*</FormLabel>
-                          <Select onValueChange={field.onChange} value={field.value}>
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select your state" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {indianStates.map((state) => (
-                                <SelectItem key={state} value={state}>
-                                  {state}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+                  {/* JNV Location */}
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-medium">JNV Location</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <FormField
+                        control={registrationForm.control}
+                        name="state"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>JNV State*</FormLabel>
+                            <Select onValueChange={field.onChange} value={field.value}>
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select your JNV state" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                {INDIAN_STATES.map((state) => (
+                                  <SelectItem key={state} value={state}>
+                                    {state}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
 
-                    <FormField
-                      control={registrationForm.control}
-                      name="district"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>District*</FormLabel>
-                          <Select onValueChange={field.onChange} value={field.value} disabled={!registrationForm.watch("state")}>
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder={registrationForm.watch("state") ? "Select your district" : "Select state first"} />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {registrationForm.watch("state") && indianDistricts[registrationForm.watch("state") as keyof typeof indianDistricts]?.map((district: string) => (
-                                <SelectItem key={district} value={district}>
-                                  {district}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+                      <FormField
+                        control={registrationForm.control}
+                        name="district"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>JNV District*</FormLabel>
+                            <Select onValueChange={field.onChange} value={field.value} disabled={!registrationForm.watch("state")}>
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder={registrationForm.watch("state") ? "Select your JNV district" : "Select state first"} />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                {registrationForm.watch("state") && INDIAN_DISTRICTS[registrationForm.watch("state") as keyof typeof INDIAN_DISTRICTS]?.map((district: string) => (
+                                  <SelectItem key={district} value={district}>
+                                    {district}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
                   </div>
 
                   <FormField
@@ -806,7 +776,7 @@ export default function Auth() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            {professionOptions.map((option) => (
+                            {PROFESSION_CATEGORIES.map((option) => (
                               <SelectItem key={option} value={option}>
                                 {option}
                               </SelectItem>
@@ -834,6 +804,24 @@ export default function Auth() {
                     />
                   )}
 
+                  {/* Residential Address */}
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-medium">Current Residential Address</h3>
+                    <FormField
+                      control={registrationForm.control}
+                      name="pinCode"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Pin Code</FormLabel>
+                          <FormControl>
+                            <Input placeholder="560001" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
                   <FormField
                     control={registrationForm.control}
                     name="gpsEnabled"
@@ -857,6 +845,8 @@ export default function Auth() {
                     )}
                   />
 
+
+
                   <FormField
                     control={registrationForm.control}
                     name="isExpert"
@@ -870,7 +860,7 @@ export default function Auth() {
                         </FormControl>
                         <div className="space-y-1 leading-none">
                           <FormLabel>
-                            I want to be an expert and help others
+                            I want to help with my expertise
                           </FormLabel>
                           <p className="text-sm text-muted-foreground">
                             Check this if you'd like to provide guidance to fellow alumni
@@ -889,7 +879,7 @@ export default function Auth() {
                           <FormItem>
                             <FormLabel>Which area could you provide help and support?</FormLabel>
                             <div className="space-y-2">
-                              {helpAreasOptions.map((option) => (
+                              {HELP_AREAS_CATEGORIES.map((option) => (
                                 <div key={option} className="flex items-center space-x-2">
                                   <Checkbox
                                     id={option}
@@ -983,10 +973,13 @@ export default function Auth() {
                         name="upiId"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>UPI ID (for gratitude payments)</FormLabel>
+                            <FormLabel>UPI ID</FormLabel>
                             <FormControl>
                               <Input placeholder="yourname@paytm" {...field} />
                             </FormControl>
+                            <p className="text-sm text-muted-foreground">
+                              Some users may send you money as a token of thanks once you help
+                            </p>
                             <FormMessage />
                           </FormItem>
                         )}
