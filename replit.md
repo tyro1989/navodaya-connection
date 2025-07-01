@@ -122,3 +122,9 @@ Changelog:
 ## User Preferences
 
 Preferred communication style: Simple, everyday language.
+
+### Registration Requirements
+- JNV batch year is mandatory 
+- JNV state is mandatory
+- JNV district is mandatory
+- All other fields are optional

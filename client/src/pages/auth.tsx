@@ -79,15 +79,15 @@ const otpSchema = z.object({
   otp: z.string().length(6, "OTP must be 6 digits"),
 });
 
-// Development login schema - comprehensive but optional fields
+// Development login schema - JNV fields mandatory, rest optional
 const devLoginSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
+  batchYear: z.number().min(1990).max(new Date().getFullYear(), "Please select a valid batch year"),
+  state: z.string().min(1, "JNV state is required"),
+  district: z.string().min(1, "JNV district is required"),
   email: z.string().email("Please enter a valid email address").optional().or(z.literal("")),
-  batchYear: z.number().min(1990).max(new Date().getFullYear()).optional(),
   profession: z.string().optional(),
   professionOther: z.string().optional(),
-  state: z.string().optional(),
-  district: z.string().optional(),
   pinCode: z.string().optional(),
   isExpert: z.boolean().optional(),
   expertiseAreas: z.array(z.string()).optional(),
@@ -131,11 +131,11 @@ export default function Auth() {
     resolver: zodResolver(devLoginSchema),
     defaultValues: { 
       name: "", 
-      email: "",
       batchYear: 2020,
+      state: "",
+      district: "",
+      email: "",
       profession: "Studying",
-      state: "Karnataka",
-      district: "Bengaluru Urban",
       pinCode: "560001",
       isExpert: false,
       expertiseAreas: [],
@@ -360,16 +360,67 @@ export default function Auth() {
                       </FormItem>
                     )}
                   />
+                  {/* JNV Batch Year - Mandatory */}
                   <FormField
                     control={devLoginForm.control}
-                    name="email"
+                    name="batchYear"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Email (Optional)</FormLabel>
+                        <FormLabel>JNV Batch Year *</FormLabel>
+                        <Select
+                          onValueChange={(value) => field.onChange(parseInt(value))}
+                          defaultValue={field.value?.toString()}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select your batch year" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {batchYears.map((year) => (
+                              <SelectItem key={year} value={year.toString()}>
+                                {year}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  {/* JNV State - Mandatory */}
+                  <FormField
+                    control={devLoginForm.control}
+                    name="state"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>JNV State *</FormLabel>
+                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select your JNV state" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {indianStates.map((state) => (
+                              <SelectItem key={state} value={state}>
+                                {state}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  {/* JNV District - Mandatory */}
+                  <FormField
+                    control={devLoginForm.control}
+                    name="district"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>JNV District *</FormLabel>
                         <FormControl>
                           <Input
-                            placeholder="your.email@example.com"
-                            type="email"
+                            placeholder="Enter your JNV district"
                             {...field}
                           />
                         </FormControl>
@@ -387,28 +438,20 @@ export default function Auth() {
                       </Button>
                     </CollapsibleTrigger>
                     <CollapsibleContent className="space-y-4 mt-4">
-                      {/* Batch Year */}
+                      {/* Email */}
                       <FormField
                         control={devLoginForm.control}
-                        name="batchYear"
+                        name="email"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Batch Year</FormLabel>
-                            <Select
-                              onValueChange={(value) => field.onChange(parseInt(value))}
-                              defaultValue={field.value?.toString()}
-                            >
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select batch year" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {batchYears.map((year) => (
-                                  <SelectItem key={year} value={year.toString()}>
-                                    {year}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                            <FormLabel>Email (Optional)</FormLabel>
+                            <FormControl>
+                              <Input
+                                placeholder="your.email@example.com"
+                                type="email"
+                                {...field}
+                              />
+                            </FormControl>
                             <FormMessage />
                           </FormItem>
                         )}
@@ -420,7 +463,7 @@ export default function Auth() {
                         name="profession"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Profession</FormLabel>
+                            <FormLabel>Profession (Optional)</FormLabel>
                             <Select onValueChange={field.onChange} defaultValue={field.value}>
                               <SelectTrigger>
                                 <SelectValue placeholder="Select profession" />
@@ -438,55 +481,13 @@ export default function Auth() {
                         )}
                       />
 
-                      {/* State */}
-                      <FormField
-                        control={devLoginForm.control}
-                        name="state"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>State</FormLabel>
-                            <Select onValueChange={field.onChange} defaultValue={field.value}>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select state" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {indianStates.map((state) => (
-                                  <SelectItem key={state} value={state}>
-                                    {state}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      {/* District */}
-                      <FormField
-                        control={devLoginForm.control}
-                        name="district"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>District</FormLabel>
-                            <FormControl>
-                              <Input
-                                placeholder="Enter district"
-                                {...field}
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
                       {/* Pin Code */}
                       <FormField
                         control={devLoginForm.control}
                         name="pinCode"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Pin Code</FormLabel>
+                            <FormLabel>Pin Code (Optional)</FormLabel>
                             <FormControl>
                               <Input
                                 placeholder="560001"
