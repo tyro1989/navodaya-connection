@@ -31,13 +31,13 @@ export default function RequestForm() {
     defaultValues: {
       title: "",
       description: "",
-      expertiseRequired: "none",
+      expertiseRequired: null,
       urgency: "medium",
       helpType: "general",
-      helpLocationState: "",
-      helpLocationDistrict: "",
-      helpLocationPinCode: "",
-      helpLocationGps: "",
+      helpLocationState: null,
+      helpLocationDistrict: null,
+      helpLocationPinCode: null,
+      helpLocationGps: null,
       helpLocationNotApplicable: false,
       attachments: [],
     },
@@ -73,6 +73,8 @@ export default function RequestForm() {
 
   const onSubmit = (data: RequestFormData) => {
     console.log("Form submitted with data:", data);
+    console.log("Form validation errors:", form.formState.errors);
+    console.log("Form is valid:", form.formState.isValid);
     createRequestMutation.mutate(data);
   };
 
@@ -183,7 +185,10 @@ export default function RequestForm() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Expertise Required (Optional)</FormLabel>
-                                                                <Select onValueChange={field.onChange} value={field.value ?? "none"}>
+                    <Select 
+                      onValueChange={(value) => field.onChange(value === "none" ? null : value)} 
+                      value={field.value ?? "none"}
+                    >
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue placeholder="Select expertise area (optional)" />
@@ -281,7 +286,10 @@ export default function RequestForm() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>State</FormLabel>
-                                                 <Select onValueChange={field.onChange} value={field.value ?? ""}>
+                        <Select 
+                          onValueChange={(value) => field.onChange(value || null)} 
+                          value={field.value ?? ""}
+                        >
                            <FormControl>
                              <SelectTrigger>
                                <SelectValue placeholder="Select state" />
@@ -306,11 +314,11 @@ export default function RequestForm() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>District</FormLabel>
-                                                 <Select 
-                           onValueChange={field.onChange} 
-                           value={field.value ?? ""} 
-                           disabled={!form.watch("helpLocationState")}
-                         >
+                        <Select 
+                          onValueChange={(value) => field.onChange(value || null)} 
+                          value={field.value ?? ""} 
+                          disabled={!form.watch("helpLocationState")}
+                        >
                           <FormControl>
                             <SelectTrigger>
                               <SelectValue placeholder={form.watch("helpLocationState") ? "Select district" : "Select state first"} />
@@ -340,6 +348,7 @@ export default function RequestForm() {
                             placeholder="e.g., 560001"
                             {...field}
                             value={field.value ?? ""}
+                            onChange={(e) => field.onChange(e.target.value || null)}
                           />
                         </FormControl>
                         <FormMessage />
@@ -412,6 +421,12 @@ export default function RequestForm() {
                 type="submit"
                 className="flex-1"
                 disabled={createRequestMutation.isPending}
+                onClick={(e) => {
+                  console.log("Submit button clicked!");
+                  console.log("Form errors:", form.formState.errors);
+                  console.log("Form values:", form.getValues());
+                  // Don't prevent default - let form handle submission
+                }}
               >
                 <NotebookPen className="h-4 w-4 mr-2" />
                 {createRequestMutation.isPending ? "Posting..." : "Post Request"}
