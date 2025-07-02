@@ -33,7 +33,7 @@ export default function RequestForm() {
       description: "",
       expertiseRequired: null,
       urgency: "medium",
-      helpType: "general",
+      helpType: "general", // Still needed for backend
       helpLocationState: null,
       helpLocationDistrict: null,
       helpLocationPinCode: null,
@@ -77,6 +77,8 @@ export default function RequestForm() {
     console.log("Form is valid:", form.formState.isValid);
     createRequestMutation.mutate(data);
   };
+
+  // Note: Debugging moved to button click handler to avoid constant re-renders
 
   const getCurrentLocation = () => {
     if (!navigator.geolocation) {
@@ -242,38 +244,49 @@ export default function RequestForm() {
               />
             </div>
 
-            {/* Location where help is needed */}
+            {/* Location Applicability */}
             <div className="space-y-4">
               <div className="flex items-center space-x-2">
                 <MapPin className="h-4 w-4 text-gray-600" />
-                <Label className="text-sm font-medium text-gray-700">Where do you need help? (Optional)</Label>
+                <Label className="text-sm font-medium text-gray-700">Is location applicable for this request?</Label>
               </div>
               
               <FormField
                 control={form.control}
                 name="helpLocationNotApplicable"
                 render={({ field }) => (
-                  <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                  <FormItem>
                     <FormControl>
-                      <Checkbox
-                        checked={field.value || false}
-                        onCheckedChange={(checked) => {
-                          field.onChange(checked);
-                          if (checked) {
-                            // Clear location fields when "not applicable" is checked
-                            form.setValue("helpLocationState", "");
-                            form.setValue("helpLocationDistrict", "");
-                            form.setValue("helpLocationPinCode", "");
-                            form.setValue("helpLocationGps", "");
+                      <RadioGroup
+                        onValueChange={(value) => {
+                          const notApplicable = value === "not-applicable";
+                          field.onChange(notApplicable);
+                          if (notApplicable) {
+                            // Clear location fields when "not applicable" is selected
+                            form.setValue("helpLocationState", null);
+                            form.setValue("helpLocationDistrict", null);
+                            form.setValue("helpLocationPinCode", null);
+                            form.setValue("helpLocationGps", null);
                           }
                         }}
-                      />
+                        value={field.value ? "not-applicable" : "applicable"}
+                        className="flex flex-col space-y-2"
+                      >
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem value="applicable" id="location-applicable" />
+                          <Label htmlFor="location-applicable" className="text-sm cursor-pointer">
+                            Yes, location is relevant (physical assistance required)
+                          </Label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem value="not-applicable" id="location-not-applicable" />
+                          <Label htmlFor="location-not-applicable" className="text-sm cursor-pointer">
+                            No, location not applicable (online help, advice, etc.)
+                          </Label>
+                        </div>
+                      </RadioGroup>
                     </FormControl>
-                    <div className="space-y-1 leading-none">
-                      <FormLabel>
-                        Location not applicable (e.g., online help, advice, etc.)
-                      </FormLabel>
-                    </div>
+                    <FormMessage />
                   </FormItem>
                 )}
               />
@@ -374,36 +387,7 @@ export default function RequestForm() {
               )}
             </div>
 
-            <FormField
-              control={form.control}
-              name="helpType"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Help Type</FormLabel>
-                  <FormControl>
-                    <RadioGroup
-                      onValueChange={field.onChange}
-                      defaultValue={field.value}
-                      className="flex flex-wrap gap-4"
-                    >
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="general" id="general" />
-                        <Label htmlFor="general" className="text-sm cursor-pointer">
-                          General advice from anyone
-                        </Label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="specific" id="specific" />
-                        <Label htmlFor="specific" className="text-sm cursor-pointer">
-                          Specific expert (I'll choose)
-                        </Label>
-                      </div>
-                    </RadioGroup>
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+
 
             <div>
               <Label className="text-sm font-medium text-gray-700 mb-2 block">
@@ -425,12 +409,48 @@ export default function RequestForm() {
                   console.log("Submit button clicked!");
                   console.log("Form errors:", form.formState.errors);
                   console.log("Form values:", form.getValues());
-                  // Don't prevent default - let form handle submission
+                  console.log("Form is valid:", form.formState.isValid);
+                  
+                  // Manually trigger validation
+                  form.trigger().then((isValid) => {
+                    console.log("Manual validation result:", isValid);
+                    if (!isValid) {
+                      console.log("Validation failed, errors:", form.formState.errors);
+                    }
+                  });
                 }}
               >
                 <NotebookPen className="h-4 w-4 mr-2" />
                 {createRequestMutation.isPending ? "Posting..." : "Post Request"}
               </Button>
+              
+              {/* Debug button to test API directly */}
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => {
+                  const testData = {
+                    title: "Test Request",
+                    description: "This is a test request to see if the API works",
+                    expertiseRequired: null,
+                    urgency: "medium" as const,
+                    helpType: "general" as const,
+                    helpLocationState: null,
+                    helpLocationDistrict: null,
+                    helpLocationPinCode: null,
+                    helpLocationGps: null,
+                    helpLocationNotApplicable: false,
+                    targetExpertId: null,
+                    attachments: [],
+                  };
+                  console.log("Testing API with:", testData);
+                  createRequestMutation.mutate(testData);
+                }}
+                size="sm"
+              >
+                Test API
+              </Button>
+              
               <Button
                 type="button"
                 variant="outline"

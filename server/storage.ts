@@ -8,6 +8,8 @@ import {
   type OtpVerification, type InsertOtp,
   type ExpertWithStats
 } from "@shared/schema";
+import Database from 'better-sqlite3';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 
 export interface IStorage {
   // User management
@@ -253,7 +255,6 @@ export class MemStorage implements IStorage {
   }
 
   async createRequest(insertRequest: InsertRequest): Promise<Request> {
-    console.log("Storage.createRequest - Input data:", insertRequest);
     const request: Request = {
       ...insertRequest,
       id: this.currentRequestId++,
@@ -262,9 +263,7 @@ export class MemStorage implements IStorage {
       createdAt: new Date(),
       updatedAt: new Date()
     };
-    console.log("Storage.createRequest - Created request:", request);
     this.requests.set(request.id, request);
-    console.log("Storage.createRequest - Total requests in storage:", this.requests.size);
     return request;
   }
 
@@ -314,11 +313,7 @@ export class MemStorage implements IStorage {
   }
 
   async getOpenRequests(limit = 20): Promise<RequestWithUser[]> {
-    console.log("Storage.getOpenRequests - Total requests in storage:", this.requests.size);
-    const allRequests = Array.from(this.requests.values());
-    console.log("Storage.getOpenRequests - All requests:", allRequests);
-    
-    const openRequests = allRequests
+    const openRequests = Array.from(this.requests.values())
       .filter(request => request.status === "open")
       .sort((a, b) => {
         // Sort by urgency first, then by creation time
@@ -327,8 +322,6 @@ export class MemStorage implements IStorage {
         return b.createdAt!.getTime() - a.createdAt!.getTime();
       })
       .slice(0, limit);
-    
-    console.log("Storage.getOpenRequests - Filtered open requests:", openRequests.length);
     
     return Promise.all(openRequests.map(async request => {
       const user = this.users.get(request.userId);
@@ -501,4 +494,935 @@ export class MemStorage implements IStorage {
   }
 }
 
-export const storage = new MemStorage();
+export class FileStorage implements IStorage {
+  private db: Database.Database;
+  
+  constructor(dbPath: string = './data/navodaya-connection.db') {
+    // Create directory if it doesn't exist
+    const dir = './data';
+    if (!existsSync(dir)) {
+      mkdirSync(dir, { recursive: true });
+    }
+    
+    this.db = new Database(dbPath);
+    this.initializeTables();
+    this.seedData();
+  }
+
+  private initializeTables() {
+    // Create tables if they don't exist
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        phone TEXT UNIQUE NOT NULL,
+        name TEXT NOT NULL,
+        email TEXT,
+        gender TEXT,
+        batchYear INTEGER NOT NULL,
+        profession TEXT NOT NULL,
+        professionOther TEXT,
+        state TEXT NOT NULL,
+        district TEXT NOT NULL,
+        pinCode TEXT,
+        gpsLocation TEXT,
+        gpsEnabled BOOLEAN DEFAULT FALSE,
+        helpAreas TEXT, -- JSON array
+        helpAreasOther TEXT,
+        expertiseAreas TEXT, -- JSON array
+        isExpert BOOLEAN DEFAULT FALSE,
+        dailyRequestLimit INTEGER DEFAULT 3,
+        phoneVisible BOOLEAN DEFAULT FALSE,
+        upiId TEXT,
+        bio TEXT,
+        profileImage TEXT,
+        isActive BOOLEAN DEFAULT TRUE,
+        lastActive DATETIME,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS requests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        userId INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL,
+        expertiseRequired TEXT,
+        urgency TEXT NOT NULL,
+        helpType TEXT NOT NULL,
+        location TEXT,
+        preferredContactMethod TEXT,
+        targetAudience TEXT,
+        isUrgent BOOLEAN DEFAULT FALSE,
+        targetExpertId INTEGER,
+        status TEXT DEFAULT 'open',
+        resolved BOOLEAN DEFAULT FALSE,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (userId) REFERENCES users(id),
+        FOREIGN KEY (targetExpertId) REFERENCES users(id)
+      );
+
+      CREATE TABLE IF NOT EXISTS responses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        requestId INTEGER NOT NULL,
+        expertId INTEGER NOT NULL,
+        content TEXT NOT NULL,
+        attachments TEXT, -- JSON array
+        isHelpful BOOLEAN,
+        helpfulCount INTEGER DEFAULT 0,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (requestId) REFERENCES requests(id),
+        FOREIGN KEY (expertId) REFERENCES users(id)
+      );
+
+      CREATE TABLE IF NOT EXISTS reviews (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        userId INTEGER NOT NULL,
+        requestId INTEGER NOT NULL,
+        expertId INTEGER NOT NULL,
+        rating INTEGER NOT NULL,
+        comment TEXT,
+        gratitudeAmount TEXT,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (userId) REFERENCES users(id),
+        FOREIGN KEY (requestId) REFERENCES requests(id),
+        FOREIGN KEY (expertId) REFERENCES users(id)
+      );
+
+      CREATE TABLE IF NOT EXISTS expert_stats (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        expertId INTEGER NOT NULL,
+        totalResponses INTEGER DEFAULT 0,
+        averageRating TEXT DEFAULT '0',
+        totalReviews INTEGER DEFAULT 0,
+        helpfulResponses INTEGER DEFAULT 0,
+        todayResponses INTEGER DEFAULT 0,
+        lastResetDate DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (expertId) REFERENCES users(id)
+      );
+
+      CREATE TABLE IF NOT EXISTS otp_verifications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        phone TEXT NOT NULL,
+        otp TEXT NOT NULL,
+        expiresAt DATETIME NOT NULL
+      );
+    `);
+  }
+
+  private seedData() {
+    // Check if users already exist
+    const existingUsers = this.db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number };
+    if (existingUsers.count > 0) return;
+
+    // Seed expert users
+    const insertUser = this.db.prepare(`
+      INSERT INTO users (
+        phone, name, email, batchYear, profession, state, district, pinCode,
+        expertiseAreas, isExpert, dailyRequestLimit, phoneVisible, upiId, bio,
+        profileImage, isActive, lastActive, createdAt
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const insertStats = this.db.prepare(`
+      INSERT INTO expert_stats (
+        expertId, totalResponses, averageRating, totalReviews, helpfulResponses,
+        todayResponses, lastResetDate
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const expertUsers = [
+      {
+        phone: "+919876543210",
+        name: "Dr. Rajesh Kumar",
+        email: "rajesh.kumar@email.com",
+        batchYear: 1995,
+        profession: "Cardiologist",
+        state: "Delhi",
+        district: "New Delhi",
+        pinCode: "110001",
+        expertiseAreas: JSON.stringify(["Cardiology", "General Medicine", "Health Consultation"]),
+        isExpert: true,
+        dailyRequestLimit: 5,
+        phoneVisible: true,
+        upiId: "rajesh@paytm",
+        bio: "Experienced cardiologist with 25+ years in practice",
+        profileImage: "https://images.unsplash.com/photo-1612349317150-e413f6a5b16d",
+        isActive: true,
+        lastActive: new Date().toISOString(),
+        createdAt: new Date().toISOString()
+      },
+      {
+        phone: "+919876543211",
+        name: "Priya Sharma",
+        email: "priya.sharma@email.com",
+        batchYear: 2010,
+        profession: "Software Engineer",
+        state: "Karnataka",
+        district: "Bengaluru Urban",
+        pinCode: "560001",
+        expertiseAreas: JSON.stringify(["Technology", "Career Guidance", "Software Development"]),
+        isExpert: true,
+        dailyRequestLimit: 3,
+        phoneVisible: false,
+        upiId: "priya@gpay",
+        bio: "Senior software engineer helping with tech career transitions",
+        profileImage: "",
+        isActive: true,
+        lastActive: new Date().toISOString(),
+        createdAt: new Date().toISOString()
+      },
+      {
+        phone: "+919876543212",
+        name: "Amit Singh",
+        email: "amit.singh@email.com",
+        batchYear: 2005,
+        profession: "Education Consultant",
+        state: "Maharashtra",
+        district: "Mumbai",
+        pinCode: "400001",
+        expertiseAreas: JSON.stringify(["Education", "Career Counseling", "Academic Guidance"]),
+        isExpert: true,
+        dailyRequestLimit: 3,
+        phoneVisible: false,
+        upiId: "",
+        bio: "Education consultant with expertise in academic planning",
+        profileImage: "",
+        isActive: true,
+        lastActive: new Date().toISOString(),
+        createdAt: new Date().toISOString()
+      }
+    ];
+
+    this.db.transaction(() => {
+      expertUsers.forEach((user, index) => {
+        const userId = index + 1;
+        insertUser.run(
+          user.phone, user.name, user.email, user.batchYear, user.profession,
+          user.state, user.district, user.pinCode, user.expertiseAreas, user.isExpert,
+          user.dailyRequestLimit, user.phoneVisible, user.upiId, user.bio,
+          user.profileImage, user.isActive, user.lastActive, user.createdAt
+        );
+
+        insertStats.run(
+          userId,
+          Math.floor(Math.random() * 200) + 50, // totalResponses
+          "4.8", // averageRating
+          Math.floor(Math.random() * 150) + 30, // totalReviews
+          Math.floor(Math.random() * 180) + 40, // helpfulResponses
+          Math.floor(Math.random() * 3), // todayResponses
+          new Date().toISOString() // lastResetDate
+        );
+      });
+    })();
+  }
+
+  async createUser(insertUser: InsertUser): Promise<User> {
+    const stmt = this.db.prepare(`
+      INSERT INTO users (
+        phone, name, email, gender, batchYear, profession, professionOther,
+        state, district, pinCode, gpsLocation, gpsEnabled, helpAreas,
+        helpAreasOther, expertiseAreas, isExpert, dailyRequestLimit,
+        phoneVisible, upiId, bio, profileImage, isActive, lastActive, createdAt
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const result = stmt.run(
+      insertUser.phone,
+      insertUser.name,
+      insertUser.email || null,
+      insertUser.gender || null,
+      insertUser.batchYear,
+      insertUser.profession,
+      insertUser.professionOther || null,
+      insertUser.state,
+      insertUser.district,
+      insertUser.pinCode || null,
+      insertUser.gpsLocation || null,
+      insertUser.gpsEnabled || false,
+      JSON.stringify(insertUser.helpAreas || []),
+      insertUser.helpAreasOther || null,
+      JSON.stringify(insertUser.expertiseAreas || []),
+      insertUser.isExpert || false,
+      insertUser.dailyRequestLimit || 3,
+      insertUser.phoneVisible || false,
+      insertUser.upiId || null,
+      insertUser.bio || null,
+      insertUser.profileImage || null,
+      insertUser.isActive !== false,
+      new Date().toISOString(),
+      new Date().toISOString()
+    );
+
+    const user = this.getUserById(result.lastInsertRowid as number);
+    if (!user) throw new Error("Failed to create user");
+
+    // Create expert stats if user is an expert
+    if (insertUser.isExpert) {
+      const statsStmt = this.db.prepare(`
+        INSERT INTO expert_stats (expertId, totalResponses, averageRating, totalReviews, helpfulResponses, todayResponses, lastResetDate)
+        VALUES (?, 0, '0', 0, 0, 0, ?)
+      `);
+      statsStmt.run(result.lastInsertRowid, new Date().toISOString());
+    }
+
+    return user;
+  }
+
+  async getUserById(id: number): Promise<User | undefined> {
+    const stmt = this.db.prepare('SELECT * FROM users WHERE id = ?');
+    const row = stmt.get(id) as any;
+    if (!row) return undefined;
+
+    return this.transformUserRow(row);
+  }
+
+  async getUserByPhone(phone: string): Promise<User | undefined> {
+    const stmt = this.db.prepare('SELECT * FROM users WHERE phone = ?');
+    const row = stmt.get(phone) as any;
+    if (!row) return undefined;
+
+    return this.transformUserRow(row);
+  }
+
+  private transformUserRow(row: any): User {
+    return {
+      id: row.id,
+      phone: row.phone,
+      name: row.name,
+      email: row.email,
+      gender: row.gender,
+      batchYear: row.batchYear,
+      profession: row.profession,
+      professionOther: row.professionOther,
+      state: row.state,
+      district: row.district,
+      pinCode: row.pinCode,
+      gpsLocation: row.gpsLocation,
+      gpsEnabled: Boolean(row.gpsEnabled),
+      helpAreas: row.helpAreas ? JSON.parse(row.helpAreas) : [],
+      helpAreasOther: row.helpAreasOther,
+      expertiseAreas: row.expertiseAreas ? JSON.parse(row.expertiseAreas) : [],
+      isExpert: Boolean(row.isExpert),
+      dailyRequestLimit: row.dailyRequestLimit,
+      phoneVisible: Boolean(row.phoneVisible),
+      upiId: row.upiId,
+      bio: row.bio,
+      profileImage: row.profileImage,
+      isActive: Boolean(row.isActive),
+      lastActive: row.lastActive ? new Date(row.lastActive) : null,
+      createdAt: row.createdAt ? new Date(row.createdAt) : null
+    };
+  }
+
+  async updateUser(id: number, updates: Partial<InsertUser>): Promise<User | undefined> {
+    const fields: string[] = [];
+    const values: any[] = [];
+
+    for (const [key, value] of Object.entries(updates)) {
+      if (value !== undefined) {
+        if (key === 'helpAreas' || key === 'expertiseAreas') {
+          fields.push(`${key} = ?`);
+          values.push(JSON.stringify(value));
+        } else {
+          fields.push(`${key} = ?`);
+          values.push(value);
+        }
+      }
+    }
+
+    if (fields.length === 0) return this.getUserById(id);
+
+    values.push(id);
+    const stmt = this.db.prepare(`UPDATE users SET ${fields.join(', ')} WHERE id = ?`);
+    stmt.run(...values);
+
+    return this.getUserById(id);
+  }
+
+  async getExperts(limit = 10): Promise<ExpertWithStats[]> {
+    const stmt = this.db.prepare(`
+      SELECT u.*, es.* FROM users u
+      LEFT JOIN expert_stats es ON u.id = es.expertId
+      WHERE u.isExpert = 1 AND u.isActive = 1
+      LIMIT ?
+    `);
+
+    const rows = stmt.all(limit) as any[];
+    return rows.map(row => ({
+      ...this.transformUserRow(row),
+      availableSlots: Math.max(0, row.dailyRequestLimit - (row.todayResponses || 0)),
+      stats: {
+        id: row.expertId || 0,
+        expertId: row.id,
+        totalResponses: row.totalResponses || 0,
+        averageRating: row.averageRating || "0",
+        totalReviews: row.totalReviews || 0,
+        helpfulResponses: row.helpfulResponses || 0,
+        todayResponses: row.todayResponses || 0,
+        lastResetDate: row.lastResetDate ? new Date(row.lastResetDate) : new Date()
+      }
+    }));
+  }
+
+  async getExpertsByExpertise(expertise: string): Promise<ExpertWithStats[]> {
+    const stmt = this.db.prepare(`
+      SELECT u.*, es.* FROM users u
+      LEFT JOIN expert_stats es ON u.id = es.expertId
+      WHERE u.isExpert = 1 AND u.isActive = 1 AND u.expertiseAreas LIKE ?
+    `);
+
+    const rows = stmt.all(`%"${expertise}"%`) as any[];
+    return rows.map(row => ({
+      ...this.transformUserRow(row),
+      availableSlots: Math.max(0, row.dailyRequestLimit - (row.todayResponses || 0)),
+      stats: {
+        id: row.expertId || 0,
+        expertId: row.id,
+        totalResponses: row.totalResponses || 0,
+        averageRating: row.averageRating || "0",
+        totalReviews: row.totalReviews || 0,
+        helpfulResponses: row.helpfulResponses || 0,
+        todayResponses: row.todayResponses || 0,
+        lastResetDate: row.lastResetDate ? new Date(row.lastResetDate) : new Date()
+      }
+    }));
+  }
+
+  async createOtpVerification(insertOtp: InsertOtp): Promise<OtpVerification> {
+    const stmt = this.db.prepare(`
+      INSERT INTO otp_verifications (phone, otp, expiresAt)
+      VALUES (?, ?, ?)
+    `);
+
+    const result = stmt.run(
+      insertOtp.phone,
+      insertOtp.otp,
+      insertOtp.expiresAt.toISOString()
+    );
+
+    return {
+      id: result.lastInsertRowid as number,
+      phone: insertOtp.phone,
+      otp: insertOtp.otp,
+      expiresAt: insertOtp.expiresAt
+    };
+  }
+
+  async verifyOtp(phone: string, otp: string): Promise<boolean> {
+    const stmt = this.db.prepare(`
+      SELECT * FROM otp_verifications 
+      WHERE phone = ? AND otp = ? AND expiresAt > ?
+      ORDER BY id DESC LIMIT 1
+    `);
+
+    const row = stmt.get(phone, otp, new Date().toISOString());
+    return !!row;
+  }
+
+  async createRequest(insertRequest: InsertRequest): Promise<Request> {
+    const stmt = this.db.prepare(`
+      INSERT INTO requests (
+        userId, title, description, expertiseRequired, urgency, helpType,
+        location, preferredContactMethod, targetAudience, isUrgent,
+        targetExpertId, status, resolved, createdAt, updatedAt
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const now = new Date().toISOString();
+    const result = stmt.run(
+      insertRequest.userId,
+      insertRequest.title,
+      insertRequest.description,
+      insertRequest.expertiseRequired || null,
+      insertRequest.urgency,
+      insertRequest.helpType,
+      insertRequest.location || null,
+      insertRequest.preferredContactMethod || null,
+      insertRequest.targetAudience || null,
+      insertRequest.isUrgent || false,
+      insertRequest.targetExpertId || null,
+      "open",
+      false,
+      now,
+      now
+    );
+
+    const requestRow = this.db.prepare('SELECT * FROM requests WHERE id = ?').get(result.lastInsertRowid) as any;
+    return this.transformRequestRow(requestRow);
+  }
+
+  private transformRequestRow(row: any): Request {
+    return {
+      id: row.id,
+      userId: row.userId,
+      title: row.title,
+      description: row.description,
+      expertiseRequired: row.expertiseRequired,
+      urgency: row.urgency,
+      helpType: row.helpType,
+      location: row.location,
+      preferredContactMethod: row.preferredContactMethod,
+      targetAudience: row.targetAudience,
+      isUrgent: Boolean(row.isUrgent),
+      targetExpertId: row.targetExpertId,
+      status: row.status,
+      resolved: Boolean(row.resolved),
+      createdAt: row.createdAt ? new Date(row.createdAt) : null,
+      updatedAt: row.updatedAt ? new Date(row.updatedAt) : null
+    };
+  }
+
+  async getRequestById(id: number): Promise<RequestWithUser | undefined> {
+    const stmt = this.db.prepare(`
+      SELECT r.*, u.id as user_id, u.name as user_name, u.profession as user_profession, u.batchYear as user_batchYear
+      FROM requests r
+      JOIN users u ON r.userId = u.id
+      WHERE r.id = ?
+    `);
+
+    const row = stmt.get(id) as any;
+    if (!row) return undefined;
+
+    const responseCount = this.db.prepare('SELECT COUNT(*) as count FROM responses WHERE requestId = ?').get(id) as { count: number };
+
+    return {
+      ...this.transformRequestRow(row),
+      user: {
+        id: row.user_id,
+        name: row.user_name,
+        profession: row.user_profession,
+        batchYear: row.user_batchYear
+      },
+      responseCount: responseCount.count
+    };
+  }
+
+  async getRequestsByUserId(userId: number): Promise<RequestWithUser[]> {
+    const stmt = this.db.prepare(`
+      SELECT r.*, u.id as user_id, u.name as user_name, u.profession as user_profession, u.batchYear as user_batchYear
+      FROM requests r
+      JOIN users u ON r.userId = u.id
+      WHERE r.userId = ?
+      ORDER BY r.createdAt DESC
+    `);
+
+    const rows = stmt.all(userId) as any[];
+    return Promise.all(rows.map(async row => {
+      const responseCount = this.db.prepare('SELECT COUNT(*) as count FROM responses WHERE requestId = ?').get(row.id) as { count: number };
+      
+      return {
+        ...this.transformRequestRow(row),
+        user: {
+          id: row.user_id,
+          name: row.user_name,
+          profession: row.user_profession,
+          batchYear: row.user_batchYear
+        },
+        responseCount: responseCount.count
+      };
+    }));
+  }
+
+  async getOpenRequests(limit = 20): Promise<RequestWithUser[]> {
+    const stmt = this.db.prepare(`
+      SELECT r.*, u.id as user_id, u.name as user_name, u.profession as user_profession, u.batchYear as user_batchYear
+      FROM requests r
+      JOIN users u ON r.userId = u.id
+      WHERE r.status = 'open'
+      ORDER BY 
+        CASE WHEN r.urgency = 'urgent' THEN 1 ELSE 2 END,
+        r.createdAt DESC
+      LIMIT ?
+    `);
+
+    const rows = stmt.all(limit) as any[];
+    return Promise.all(rows.map(async row => {
+      const responseCount = this.db.prepare('SELECT COUNT(*) as count FROM responses WHERE requestId = ?').get(row.id) as { count: number };
+      
+      return {
+        ...this.transformRequestRow(row),
+        user: {
+          id: row.user_id,
+          name: row.user_name,
+          profession: row.user_profession,
+          batchYear: row.user_batchYear
+        },
+        responseCount: responseCount.count
+      };
+    }));
+  }
+
+  async updateRequestStatus(id: number, status: string): Promise<Request | undefined> {
+    const stmt = this.db.prepare(`
+      UPDATE requests 
+      SET status = ?, resolved = ?, updatedAt = ?
+      WHERE id = ?
+    `);
+
+    stmt.run(status, status === "resolved", new Date().toISOString(), id);
+    
+    const row = this.db.prepare('SELECT * FROM requests WHERE id = ?').get(id) as any;
+    return row ? this.transformRequestRow(row) : undefined;
+  }
+
+  async createResponse(insertResponse: InsertResponse): Promise<Response> {
+    const stmt = this.db.prepare(`
+      INSERT INTO responses (requestId, expertId, content, attachments, isHelpful, helpfulCount, createdAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const result = stmt.run(
+      insertResponse.requestId,
+      insertResponse.expertId,
+      insertResponse.content,
+      JSON.stringify(insertResponse.attachments || []),
+      insertResponse.isHelpful || null,
+      0,
+      new Date().toISOString()
+    );
+
+    // Update expert stats
+    await this.updateExpertStats(insertResponse.expertId);
+
+    const row = this.db.prepare('SELECT * FROM responses WHERE id = ?').get(result.lastInsertRowid) as any;
+    return this.transformResponseRow(row);
+  }
+
+  private transformResponseRow(row: any): Response {
+    return {
+      id: row.id,
+      requestId: row.requestId,
+      expertId: row.expertId,
+      content: row.content,
+      attachments: row.attachments ? JSON.parse(row.attachments) : null,
+      isHelpful: row.isHelpful ? Boolean(row.isHelpful) : null,
+      helpfulCount: row.helpfulCount || null,
+      createdAt: row.createdAt ? new Date(row.createdAt) : null
+    };
+  }
+
+  async getResponsesByRequestId(requestId: number): Promise<ResponseWithExpert[]> {
+    const stmt = this.db.prepare(`
+      SELECT r.*, u.id as expert_id, u.name as expert_name, u.profession as expert_profession, 
+             u.batchYear as expert_batchYear, u.profileImage as expert_profileImage
+      FROM responses r
+      JOIN users u ON r.expertId = u.id
+      WHERE r.requestId = ?
+      ORDER BY r.createdAt ASC
+    `);
+
+    const rows = stmt.all(requestId) as any[];
+    return rows.map(row => ({
+      ...this.transformResponseRow(row),
+      expert: {
+        id: row.expert_id,
+        name: row.expert_name,
+        profession: row.expert_profession,
+        batchYear: row.expert_batchYear,
+        profileImage: row.expert_profileImage
+      }
+    }));
+  }
+
+  async markResponseHelpful(responseId: number): Promise<void> {
+    const stmt = this.db.prepare(`
+      UPDATE responses 
+      SET helpfulCount = helpfulCount + 1, isHelpful = 1
+      WHERE id = ?
+    `);
+    stmt.run(responseId);
+  }
+
+  async createReview(insertReview: InsertReview): Promise<Review> {
+    const stmt = this.db.prepare(`
+      INSERT INTO reviews (userId, requestId, expertId, rating, comment, gratitudeAmount, createdAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const result = stmt.run(
+      insertReview.userId,
+      insertReview.requestId,
+      insertReview.expertId,
+      insertReview.rating,
+      insertReview.comment || null,
+      insertReview.gratitudeAmount || null,
+      new Date().toISOString()
+    );
+
+    // Update expert stats
+    await this.updateExpertStats(insertReview.expertId);
+
+    const row = this.db.prepare('SELECT * FROM reviews WHERE id = ?').get(result.lastInsertRowid) as any;
+    return this.transformReviewRow(row);
+  }
+
+  private transformReviewRow(row: any): Review {
+    return {
+      id: row.id,
+      userId: row.userId,
+      requestId: row.requestId,
+      expertId: row.expertId,
+      rating: row.rating,
+      comment: row.comment,
+      gratitudeAmount: row.gratitudeAmount,
+      createdAt: row.createdAt ? new Date(row.createdAt) : null
+    };
+  }
+
+  async getReviewsByExpertId(expertId: number): Promise<Review[]> {
+    const stmt = this.db.prepare(`
+      SELECT * FROM reviews 
+      WHERE expertId = ? 
+      ORDER BY createdAt DESC
+    `);
+
+    const rows = stmt.all(expertId) as any[];
+    return rows.map(row => this.transformReviewRow(row));
+  }
+
+  async getExpertStats(expertId: number): Promise<ExpertStats | undefined> {
+    const stmt = this.db.prepare('SELECT * FROM expert_stats WHERE expertId = ?');
+    const row = stmt.get(expertId) as any;
+    if (!row) return undefined;
+
+    return {
+      id: row.id,
+      expertId: row.expertId,
+      totalResponses: row.totalResponses,
+      averageRating: row.averageRating,
+      totalReviews: row.totalReviews,
+      helpfulResponses: row.helpfulResponses,
+      todayResponses: row.todayResponses,
+      lastResetDate: row.lastResetDate ? new Date(row.lastResetDate) : new Date()
+    };
+  }
+
+  async updateExpertStats(expertId: number): Promise<void> {
+    // Get or create stats
+    let stats = await this.getExpertStats(expertId);
+    if (!stats) {
+      const stmt = this.db.prepare(`
+        INSERT INTO expert_stats (expertId, totalResponses, averageRating, totalReviews, helpfulResponses, todayResponses, lastResetDate)
+        VALUES (?, 0, '0', 0, 0, 0, ?)
+      `);
+      stmt.run(expertId, new Date().toISOString());
+      stats = await this.getExpertStats(expertId);
+      if (!stats) return;
+    }
+
+    // Reset daily count if it's a new day
+    const today = new Date();
+    const lastReset = new Date(stats.lastResetDate!);
+    if (today.toDateString() !== lastReset.toDateString()) {
+      const resetStmt = this.db.prepare(`
+        UPDATE expert_stats 
+        SET todayResponses = 0, lastResetDate = ?
+        WHERE expertId = ?
+      `);
+      resetStmt.run(today.toISOString(), expertId);
+    }
+
+    // Update counts
+    const responseCount = this.db.prepare('SELECT COUNT(*) as count FROM responses WHERE expertId = ?').get(expertId) as { count: number };
+    const reviewCount = this.db.prepare('SELECT COUNT(*) as count FROM reviews WHERE expertId = ?').get(expertId) as { count: number };
+    const helpfulCount = this.db.prepare('SELECT COUNT(*) as count FROM responses WHERE expertId = ? AND isHelpful = 1').get(expertId) as { count: number };
+    const avgRating = this.db.prepare('SELECT AVG(rating) as avg FROM reviews WHERE expertId = ?').get(expertId) as { avg: number };
+    const todayCount = this.db.prepare(`
+      SELECT COUNT(*) as count FROM responses 
+      WHERE expertId = ? AND date(createdAt) = date('now')
+    `).get(expertId) as { count: number };
+
+    const updateStmt = this.db.prepare(`
+      UPDATE expert_stats 
+      SET totalResponses = ?, totalReviews = ?, helpfulResponses = ?, 
+          averageRating = ?, todayResponses = ?
+      WHERE expertId = ?
+    `);
+
+    updateStmt.run(
+      responseCount.count,
+      reviewCount.count,
+      helpfulCount.count,
+      avgRating.avg ? avgRating.avg.toFixed(1) : '0',
+      todayCount.count,
+      expertId
+    );
+  }
+
+  async getDashboardStats(): Promise<{
+    totalRequests: number;
+    activeExperts: number;
+    averageResponseTime: string;
+    communityRating: number;
+  }> {
+    const totalRequests = this.db.prepare('SELECT COUNT(*) as count FROM requests').get() as { count: number };
+    const activeExperts = this.db.prepare('SELECT COUNT(*) as count FROM users WHERE isExpert = 1 AND isActive = 1').get() as { count: number };
+    const avgRating = this.db.prepare('SELECT AVG(rating) as avg FROM reviews').get() as { avg: number };
+
+    return {
+      totalRequests: totalRequests.count,
+      activeExperts: activeExperts.count,
+      averageResponseTime: "12 mins",
+      communityRating: Number((avgRating.avg || 0).toFixed(1))
+    };
+  }
+}
+
+export class PersistentMemStorage extends MemStorage {
+  private dataFile = './data/storage.json';
+  
+  constructor() {
+    super();
+    this.loadData();
+  }
+
+  private loadData() {
+    try {
+      // Create data directory if it doesn't exist
+      const dir = './data';
+      if (!existsSync(dir)) {
+        mkdirSync(dir, { recursive: true });
+      }
+
+      // Load data from file if it exists
+      if (existsSync(this.dataFile)) {
+        const data = JSON.parse(readFileSync(this.dataFile, 'utf8'));
+        
+        // Restore Maps from JSON
+        if (data.users) {
+          this.users = new Map(Object.entries(data.users).map(([k, v]: [string, any]) => [parseInt(k), {
+            ...v,
+            lastActive: v.lastActive ? new Date(v.lastActive) : null,
+            createdAt: v.createdAt ? new Date(v.createdAt) : null
+          }]));
+        }
+        
+        if (data.requests) {
+          this.requests = new Map(Object.entries(data.requests).map(([k, v]: [string, any]) => [parseInt(k), {
+            ...v,
+            createdAt: v.createdAt ? new Date(v.createdAt) : null,
+            updatedAt: v.updatedAt ? new Date(v.updatedAt) : null
+          }]));
+        }
+        
+        if (data.responses) {
+          this.responses = new Map(Object.entries(data.responses).map(([k, v]: [string, any]) => [parseInt(k), {
+            ...v,
+            createdAt: v.createdAt ? new Date(v.createdAt) : null
+          }]));
+        }
+        
+        if (data.reviews) {
+          this.reviews = new Map(Object.entries(data.reviews).map(([k, v]: [string, any]) => [parseInt(k), {
+            ...v,
+            createdAt: v.createdAt ? new Date(v.createdAt) : null
+          }]));
+        }
+        
+        if (data.expertStats) {
+          this.expertStats = new Map(Object.entries(data.expertStats).map(([k, v]: [string, any]) => [parseInt(k), {
+            ...v,
+            lastResetDate: v.lastResetDate ? new Date(v.lastResetDate) : new Date()
+          }]));
+        }
+        
+        if (data.otpVerifications) {
+          this.otpVerifications = new Map(Object.entries(data.otpVerifications).map(([k, v]: [string, any]) => [k, {
+            ...v,
+            expiresAt: new Date(v.expiresAt)
+          }]));
+        }
+
+        // Restore counters
+        if (data.counters) {
+          this.currentUserId = data.counters.currentUserId || this.currentUserId;
+          this.currentRequestId = data.counters.currentRequestId || this.currentRequestId;
+          this.currentResponseId = data.counters.currentResponseId || this.currentResponseId;
+          this.currentReviewId = data.counters.currentReviewId || this.currentReviewId;
+          this.currentStatsId = data.counters.currentStatsId || this.currentStatsId;
+          this.currentOtpId = data.counters.currentOtpId || this.currentOtpId;
+        }
+
+        console.log('Data loaded from persistent storage');
+      }
+    } catch (error) {
+      console.error('Failed to load persistent data:', error);
+    }
+  }
+
+  private saveData() {
+    try {
+      const data = {
+        users: Object.fromEntries(this.users),
+        requests: Object.fromEntries(this.requests),
+        responses: Object.fromEntries(this.responses),
+        reviews: Object.fromEntries(this.reviews),
+        expertStats: Object.fromEntries(this.expertStats),
+        otpVerifications: Object.fromEntries(this.otpVerifications),
+        counters: {
+          currentUserId: this.currentUserId,
+          currentRequestId: this.currentRequestId,
+          currentResponseId: this.currentResponseId,
+          currentReviewId: this.currentReviewId,
+          currentStatsId: this.currentStatsId,
+          currentOtpId: this.currentOtpId
+        }
+      };
+      
+      writeFileSync(this.dataFile, JSON.stringify(data, null, 2));
+    } catch (error) {
+      console.error('Failed to save persistent data:', error);
+    }
+  }
+
+  // Override methods to save data after changes
+  async createUser(insertUser: InsertUser): Promise<User> {
+    const user = await super.createUser(insertUser);
+    this.saveData();
+    return user;
+  }
+
+  async createRequest(insertRequest: InsertRequest): Promise<Request> {
+    const request = await super.createRequest(insertRequest);
+    this.saveData();
+    return request;
+  }
+
+  async updateRequestStatus(id: number, status: string): Promise<Request | undefined> {
+    const request = await super.updateRequestStatus(id, status);
+    this.saveData();
+    return request;
+  }
+
+  async createResponse(insertResponse: InsertResponse): Promise<Response> {
+    const response = await super.createResponse(insertResponse);
+    this.saveData();
+    return response;
+  }
+
+  async createReview(insertReview: InsertReview): Promise<Review> {
+    const review = await super.createReview(insertReview);
+    this.saveData();
+    return review;
+  }
+
+  async createOtpVerification(insertOtp: InsertOtp): Promise<OtpVerification> {
+    const otp = await super.createOtpVerification(insertOtp);
+    this.saveData();
+    return otp;
+  }
+
+  async markResponseHelpful(responseId: number): Promise<void> {
+    await super.markResponseHelpful(responseId);
+    this.saveData();
+  }
+
+  async updateUser(id: number, updates: Partial<InsertUser>): Promise<User | undefined> {
+    const user = await super.updateUser(id, updates);
+    this.saveData();
+    return user;
+  }
+}
+
+// Use PersistentMemStorage for data persistence
+export const storage = new PersistentMemStorage();

@@ -101,12 +101,20 @@ export const insertUserSchema = createInsertSchema(users).omit({
   lastActive: true,
 });
 
-export const insertRequestSchema = createInsertSchema(requests).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-  status: true,
-  resolved: true,
+export const insertRequestSchema = z.object({
+  userId: z.number().optional(), // Will be added by server
+  title: z.string().min(1, "Title is required"),
+  description: z.string().min(1, "Description is required"),
+  expertiseRequired: z.string().nullable().optional(),
+  urgency: z.enum(["critical", "high", "medium"]),
+  helpType: z.enum(["general", "specific"]),
+  helpLocationState: z.string().nullable().optional(),
+  helpLocationDistrict: z.string().nullable().optional(),
+  helpLocationPinCode: z.string().nullable().optional(),
+  helpLocationGps: z.string().nullable().optional(),
+  helpLocationNotApplicable: z.boolean().default(false),
+  targetExpertId: z.number().nullable().optional(),
+  attachments: z.array(z.string()).default([]),
 });
 
 export const insertResponseSchema = createInsertSchema(responses).omit({

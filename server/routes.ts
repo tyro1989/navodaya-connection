@@ -165,9 +165,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Request routes
   app.post("/api/requests", async (req, res) => {
     try {
-      console.log("POST /api/requests - User ID:", req.session.userId);
-      console.log("POST /api/requests - Request body:", req.body);
-      
       if (!req.session.userId) {
         return res.status(401).json({ message: "Not authenticated" });
       }
@@ -177,16 +174,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         userId: req.session.userId
       });
       
-      console.log("POST /api/requests - Parsed request data:", requestData);
-      
       const request = await storage.createRequest(requestData);
-      console.log("POST /api/requests - Created request:", request);
-      
       res.json({ request });
     } catch (error) {
-      console.error("POST /api/requests - Error:", error);
       if (error instanceof z.ZodError) {
-        console.error("POST /api/requests - Validation errors:", error.errors);
         return res.status(400).json({ message: "Invalid request data", errors: error.errors });
       }
       res.status(500).json({ message: "Failed to create request" });
@@ -195,26 +186,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/requests", async (req, res) => {
     try {
-      console.log("GET /api/requests - Query params:", req.query);
-      console.log("GET /api/requests - Session user ID:", req.session.userId);
-      
       const { userId, status } = req.query;
       let requests;
       
       if (userId) {
-        console.log("Getting requests for specific user:", userId);
         requests = await storage.getRequestsByUserId(parseInt(userId as string));
       } else {
-        console.log("Getting all open requests");
         requests = await storage.getOpenRequests();
       }
       
-      console.log("GET /api/requests - Found requests:", requests.length);
-      console.log("GET /api/requests - Requests data:", requests);
-      
       res.json({ requests });
     } catch (error) {
-      console.error("GET /api/requests - Error:", error);
       res.status(500).json({ message: "Failed to get requests" });
     }
   });

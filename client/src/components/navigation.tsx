@@ -10,7 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/lib/auth";
-import { GraduationCap, Bell, Search, MessageCircle, Home, BarChart3, Menu, X } from "lucide-react";
+import { GraduationCap, Bell, Search, MessageCircle, Home, BarChart3, Users, Menu, X } from "lucide-react";
 
 export default function Navigation() {
   const { user, logout } = useAuth();
@@ -23,6 +23,7 @@ export default function Navigation() {
     { path: "/", label: "Find Experts", icon: Search },
     { path: "/my-requests", label: "My Requests", icon: MessageCircle },
     { path: "/expert-dashboard", label: "Dashboard", icon: BarChart3, expertOnly: true },
+    { path: "/expert-requests", label: "Expert Requests", icon: Users, expertOnly: true },
   ];
 
   const isActive = (path: string) => {
@@ -87,9 +88,14 @@ export default function Navigation() {
                   <Link href="/profile">Profile</Link>
                 </DropdownMenuItem>
                 {user.isExpert && (
-                  <DropdownMenuItem asChild>
-                    <Link href="/expert-dashboard">Expert Dashboard</Link>
-                  </DropdownMenuItem>
+                  <>
+                    <DropdownMenuItem asChild>
+                      <Link href="/expert-dashboard">Expert Dashboard</Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link href="/expert-requests">Expert Requests</Link>
+                    </DropdownMenuItem>
+                  </>
                 )}
                 <DropdownMenuItem onClick={() => logout()}>
                   Logout

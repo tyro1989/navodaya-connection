@@ -1,0 +1,157 @@
+{
+  "users": {
+    "1": {
+      "id": 1,
+      "phone": "+919876543210",
+      "name": "Dr. Rajesh Kumar",
+      "email": "rajesh.kumar@email.com",
+      "batchYear": 1995,
+      "profession": "Cardiologist",
+      "location": "New Delhi",
+      "pinCode": "110001",
+      "expertiseAreas": [
+        "Cardiology",
+        "General Medicine",
+        "Health Consultation"
+      ],
+      "isExpert": true,
+      "dailyRequestLimit": 5,
+      "phoneVisible": true,
+      "upiId": "rajesh@paytm",
+      "bio": "Experienced cardiologist with 25+ years in practice",
+      "profileImage": "https://images.unsplash.com/photo-1612349317150-e413f6a5b16d",
+      "isActive": true,
+      "lastActive": "2025-07-02T12:00:33.609Z",
+      "createdAt": "2025-07-02T12:00:33.609Z"
+    },
+    "2": {
+      "id": 2,
+      "phone": "+919876543211",
+      "name": "Priya Sharma",
+      "email": "priya.sharma@email.com",
+      "batchYear": 2010,
+      "profession": "Software Engineer",
+      "location": "Bangalore",
+      "pinCode": "560001",
+      "expertiseAreas": [
+        "Technology",
+        "Career Guidance",
+        "Software Development"
+      ],
+      "isExpert": true,
+      "dailyRequestLimit": 3,
+      "phoneVisible": false,
+      "upiId": "priya@gpay",
+      "bio": "Senior software engineer helping with tech career transitions",
+      "profileImage": "",
+      "isActive": true,
+      "lastActive": "2025-07-02T12:00:33.609Z",
+      "createdAt": "2025-07-02T12:00:33.609Z"
+    },
+    "3": {
+      "id": 3,
+      "phone": "+919876543212",
+      "name": "Amit Singh",
+      "email": "amit.singh@email.com",
+      "batchYear": 2005,
+      "profession": "Education Consultant",
+      "location": "Mumbai",
+      "pinCode": "400001",
+      "expertiseAreas": [
+        "Education",
+        "Career Counseling",
+        "Academic Guidance"
+      ],
+      "isExpert": true,
+      "dailyRequestLimit": 3,
+      "phoneVisible": false,
+      "bio": "Education consultant with expertise in academic planning",
+      "profileImage": "",
+      "isActive": true,
+      "lastActive": "2025-07-02T12:00:33.609Z",
+      "createdAt": "2025-07-02T12:00:33.609Z"
+    },
+    "4": {
+      "phone": "+919999999999",
+      "name": "Ritesh Singh",
+      "email": "",
+      "batchYear": 2006,
+      "profession": "Studying",
+      "professionOther": "",
+      "state": "Uttar Pradesh",
+      "district": "Gonda",
+      "pinCode": "560001",
+      "gpsLocation": "",
+      "gpsEnabled": false,
+      "helpAreas": [
+        "Academics & Research"
+      ],
+      "helpAreasOther": "",
+      "expertiseAreas": [],
+      "isExpert": true,
+      "dailyRequestLimit": 3,
+      "phoneVisible": false,
+      "upiId": "",
+      "bio": "",
+      "profileImage": "",
+      "isActive": true,
+      "id": 4,
+      "lastActive": "2025-07-02T12:02:01.401Z",
+      "createdAt": "2025-07-02T12:02:01.401Z",
+      "gender": ""
+    }
+  },
+  "requests": {},
+  "responses": {},
+  "reviews": {},
+  "expertStats": {
+    "1": {
+      "id": 1,
+      "expertId": 1,
+      "totalResponses": 52,
+      "averageRating": "4.8",
+      "totalReviews": 79,
+      "helpfulResponses": 67,
+      "todayResponses": 0,
+      "lastResetDate": "2025-07-02T12:00:33.609Z"
+    },
+    "2": {
+      "id": 2,
+      "expertId": 2,
+      "totalResponses": 132,
+      "averageRating": "4.8",
+      "totalReviews": 154,
+      "helpfulResponses": 211,
+      "todayResponses": 1,
+      "lastResetDate": "2025-07-02T12:00:33.609Z"
+    },
+    "3": {
+      "id": 3,
+      "expertId": 3,
+      "totalResponses": 120,
+      "averageRating": "4.8",
+      "totalReviews": 38,
+      "helpfulResponses": 187,
+      "todayResponses": 0,
+      "lastResetDate": "2025-07-02T12:00:33.609Z"
+    }
+  },
+  "otpVerifications": {
+    "+919999999999": {
+      "phone": "+919999999999",
+      "otp": "123456",
+      "expiresAt": "2025-07-03T12:03:28.981Z",
+      "id": 3,
+      "verified": false,
+      "createdAt": "2025-07-02T12:03:28.981Z"
+    }
+  },
+  "counters": {
+    "currentUserId": 5,
+    "currentRequestId": 1,
+    "currentResponseId": 1,
+    "currentReviewId": 1,
+    "currentStatsId": 4,
+    "currentOtpId": 4
+  }
+}
