@@ -10,6 +10,8 @@ import {
 } from "@shared/schema";
 import Database from 'better-sqlite3';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { db } from "./db";
+import { eq, desc, and, sql } from "drizzle-orm";
 
 export interface IStorage {
   // User management
@@ -1424,5 +1426,370 @@ export class PersistentMemStorage extends MemStorage {
   }
 }
 
-// Use PersistentMemStorage for data persistence
-export const storage = new PersistentMemStorage();
+// Use DatabaseStorage for persistent storage
+
+export class DatabaseStorage implements IStorage {
+  async createUser(insertUser: InsertUser): Promise<User> {
+    const [user] = await db
+      .insert(users)
+      .values({
+        ...insertUser,
+        createdAt: new Date(),
+      })
+      .returning();
+    return user;
+  }
+
+  async getUserById(id: number): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user || undefined;
+  }
+
+  async getUserByPhone(phone: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.phone, phone));
+    return user || undefined;
+  }
+
+  async updateUser(id: number, updates: Partial<InsertUser>): Promise<User | undefined> {
+    const [user] = await db
+      .update(users)
+      .set({
+        ...updates,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, id))
+      .returning();
+    return user || undefined;
+  }
+
+  async getExperts(limit = 10): Promise<ExpertWithStats[]> {
+    const expertsData = await db
+      .select()
+      .from(users)
+      .where(eq(users.isExpert, true))
+      .limit(limit);
+
+    return Promise.all(expertsData.map(async (expert) => {
+      const stats = await this.getExpertStats(expert.id);
+      return {
+        ...expert,
+        stats,
+        availableSlots: Math.max(0, expert.dailyRequestLimit - (stats?.totalResponses || 0))
+      };
+    }));
+  }
+
+  async getExpertsByExpertise(expertise: string): Promise<ExpertWithStats[]> {
+    const expertsData = await db
+      .select()
+      .from(users)
+      .where(and(
+        eq(users.isExpert, true),
+        sql`${users.expertiseAreas} @> ${JSON.stringify([expertise])}`
+      ));
+
+    return Promise.all(expertsData.map(async (expert) => {
+      const stats = await this.getExpertStats(expert.id);
+      return {
+        ...expert,
+        stats,
+        availableSlots: Math.max(0, expert.dailyRequestLimit - (stats?.totalResponses || 0))
+      };
+    }));
+  }
+
+  async createOtpVerification(insertOtp: InsertOtp): Promise<OtpVerification> {
+    const [otp] = await db
+      .insert(otpVerifications)
+      .values({
+        ...insertOtp,
+        createdAt: new Date(),
+        verified: false,
+      })
+      .returning();
+    return otp;
+  }
+
+  async verifyOtp(phone: string, otp: string): Promise<boolean> {
+    const [verification] = await db
+      .select()
+      .from(otpVerifications)
+      .where(and(
+        eq(otpVerifications.phone, phone),
+        eq(otpVerifications.otp, otp),
+        sql`${otpVerifications.expiresAt} > NOW()`
+      ));
+
+    if (verification) {
+      await db
+        .update(otpVerifications)
+        .set({ verified: true })
+        .where(eq(otpVerifications.id, verification.id));
+      return true;
+    }
+    return false;
+  }
+
+  async createRequest(insertRequest: InsertRequest): Promise<Request> {
+    const [request] = await db
+      .insert(requests)
+      .values({
+        ...insertRequest,
+        status: "open",
+        resolved: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .returning();
+    return request;
+  }
+
+  async getRequestById(id: number): Promise<RequestWithUser | undefined> {
+    const requestData = await db
+      .select()
+      .from(requests)
+      .leftJoin(users, eq(requests.userId, users.id))
+      .where(eq(requests.id, id));
+
+    if (!requestData[0]) return undefined;
+
+    const request = requestData[0].requests;
+    const user = requestData[0].users;
+    
+    if (!user) return undefined;
+
+    const responsesData = await this.getResponsesByRequestId(id);
+
+    return {
+      ...request,
+      user: {
+        id: user.id,
+        name: user.name,
+        profession: user.profession,
+        batchYear: user.batchYear
+      },
+      responses: responsesData,
+      responseCount: responsesData.length
+    };
+  }
+
+  async getRequestsByUserId(userId: number): Promise<RequestWithUser[]> {
+    const requestsData = await db
+      .select()
+      .from(requests)
+      .leftJoin(users, eq(requests.userId, users.id))
+      .where(eq(requests.userId, userId))
+      .orderBy(desc(requests.createdAt));
+
+    return Promise.all(requestsData.map(async (item) => {
+      const request = item.requests;
+      const user = item.users;
+      
+      if (!user) throw new Error("User not found");
+
+      const responsesData = await this.getResponsesByRequestId(request.id);
+
+      return {
+        ...request,
+        user: {
+          id: user.id,
+          name: user.name,
+          profession: user.profession,
+          batchYear: user.batchYear
+        },
+        responses: responsesData,
+        responseCount: responsesData.length
+      };
+    }));
+  }
+
+  async getOpenRequests(limit = 20): Promise<RequestWithUser[]> {
+    const requestsData = await db
+      .select()
+      .from(requests)
+      .leftJoin(users, eq(requests.userId, users.id))
+      .where(eq(requests.status, "open"))
+      .orderBy(desc(requests.createdAt))
+      .limit(limit);
+
+    return Promise.all(requestsData.map(async (item) => {
+      const request = item.requests;
+      const user = item.users;
+      
+      if (!user) throw new Error("User not found");
+
+      const responsesData = await this.getResponsesByRequestId(request.id);
+
+      return {
+        ...request,
+        user: {
+          id: user.id,
+          name: user.name,
+          profession: user.profession,
+          batchYear: user.batchYear
+        },
+        responses: responsesData,
+        responseCount: responsesData.length
+      };
+    }));
+  }
+
+  async updateRequestStatus(id: number, status: string): Promise<Request | undefined> {
+    const [request] = await db
+      .update(requests)
+      .set({
+        status,
+        resolved: status === "resolved",
+        updatedAt: new Date(),
+      })
+      .where(eq(requests.id, id))
+      .returning();
+    return request || undefined;
+  }
+
+  async createResponse(insertResponse: InsertResponse): Promise<Response> {
+    const [response] = await db
+      .insert(responses)
+      .values({
+        ...insertResponse,
+        helpfulCount: 0,
+        isHelpful: false,
+        createdAt: new Date(),
+      })
+      .returning();
+    return response;
+  }
+
+  async getResponsesByRequestId(requestId: number): Promise<ResponseWithExpert[]> {
+    const responsesData = await db
+      .select()
+      .from(responses)
+      .leftJoin(users, eq(responses.expertId, users.id))
+      .where(eq(responses.requestId, requestId))
+      .orderBy(desc(responses.createdAt));
+
+    return responsesData.map((item) => {
+      const response = item.responses;
+      const expert = item.users;
+      
+      if (!expert) throw new Error("Expert not found");
+
+      return {
+        ...response,
+        expert: {
+          id: expert.id,
+          name: expert.name,
+          profession: expert.profession,
+          batchYear: expert.batchYear,
+          profileImage: expert.profileImage
+        }
+      };
+    });
+  }
+
+  async markResponseHelpful(responseId: number): Promise<void> {
+    await db
+      .update(responses)
+      .set({
+        isHelpful: true,
+        helpfulCount: sql`${responses.helpfulCount} + 1`
+      })
+      .where(eq(responses.id, responseId));
+  }
+
+  async createReview(insertReview: InsertReview): Promise<Review> {
+    const [review] = await db
+      .insert(reviews)
+      .values({
+        ...insertReview,
+        createdAt: new Date(),
+      })
+      .returning();
+    return review;
+  }
+
+  async getReviewsByExpertId(expertId: number): Promise<Review[]> {
+    return await db
+      .select()
+      .from(reviews)
+      .where(eq(reviews.expertId, expertId))
+      .orderBy(desc(reviews.createdAt));
+  }
+
+  async getExpertStats(expertId: number): Promise<ExpertStats | undefined> {
+    const [stats] = await db
+      .select()
+      .from(expertStats)
+      .where(eq(expertStats.expertId, expertId));
+    return stats || undefined;
+  }
+
+  async updateExpertStats(expertId: number): Promise<void> {
+    // Calculate stats from actual data
+    const reviewsData = await this.getReviewsByExpertId(expertId);
+    const responsesData = await db
+      .select()
+      .from(responses)
+      .where(eq(responses.expertId, expertId));
+
+    const averageRating = reviewsData.length > 0 
+      ? reviewsData.reduce((sum, review) => sum + review.rating, 0) / reviewsData.length 
+      : 0;
+
+    const totalResponses = responsesData.length;
+    const totalReviews = reviewsData.length;
+
+    // Upsert stats
+    await db
+      .insert(expertStats)
+      .values({
+        expertId,
+        averageRating,
+        totalResponses,
+        totalReviews,
+        responseRate: 0.95, // Default value
+        updatedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: expertStats.expertId,
+        set: {
+          averageRating,
+          totalResponses,
+          totalReviews,
+          updatedAt: new Date(),
+        }
+      });
+  }
+
+  async getDashboardStats(): Promise<{
+    totalRequests: number;
+    activeExperts: number;
+    averageResponseTime: string;
+    communityRating: number;
+  }> {
+    const [totalRequestsResult] = await db
+      .select({ count: sql`count(*)` })
+      .from(requests);
+
+    const [activeExpertsResult] = await db
+      .select({ count: sql`count(*)` })
+      .from(users)
+      .where(and(
+        eq(users.isExpert, true),
+        eq(users.isActive, true)
+      ));
+
+    const [avgRatingResult] = await db
+      .select({ avgRating: sql`avg(${expertStats.averageRating})` })
+      .from(expertStats);
+
+    return {
+      totalRequests: Number(totalRequestsResult.count) || 0,
+      activeExperts: Number(activeExpertsResult.count) || 0,
+      averageResponseTime: "2.5 hours",
+      communityRating: Number(avgRatingResult.avgRating) || 4.2
+    };
+  }
+}
+
+export const storage = new DatabaseStorage();

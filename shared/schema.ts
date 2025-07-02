@@ -1,4 +1,5 @@
 import { pgTable, text, serial, integer, boolean, timestamp, decimal } from "drizzle-orm/pg-core";
+import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -167,3 +168,52 @@ export type ExpertWithStats = User & {
   stats?: ExpertStats;
   availableSlots?: number;
 };
+
+// Relations
+export const usersRelations = relations(users, ({ many }) => ({
+  requests: many(requests),
+  responses: many(responses),
+  reviews: many(reviews),
+  stats: many(expertStats),
+}));
+
+export const requestsRelations = relations(requests, ({ one, many }) => ({
+  user: one(users, {
+    fields: [requests.userId],
+    references: [users.id],
+  }),
+  responses: many(responses),
+}));
+
+export const responsesRelations = relations(responses, ({ one }) => ({
+  request: one(requests, {
+    fields: [responses.requestId],
+    references: [requests.id],
+  }),
+  expert: one(users, {
+    fields: [responses.expertId],
+    references: [users.id],
+  }),
+}));
+
+export const reviewsRelations = relations(reviews, ({ one }) => ({
+  user: one(users, {
+    fields: [reviews.userId],
+    references: [users.id],
+  }),
+  expert: one(users, {
+    fields: [reviews.expertId],
+    references: [users.id],
+  }),
+  request: one(requests, {
+    fields: [reviews.requestId],
+    references: [requests.id],
+  }),
+}));
+
+export const expertStatsRelations = relations(expertStats, ({ one }) => ({
+  expert: one(users, {
+    fields: [expertStats.expertId],
+    references: [users.id],
+  }),
+}));
