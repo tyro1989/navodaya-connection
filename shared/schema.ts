@@ -14,6 +14,8 @@ export const users = pgTable("users", {
   professionOther: text("profession_other"),
   state: text("state").notNull(),
   district: text("district").notNull(),
+  currentState: text("current_state"),
+  currentDistrict: text("current_district"),
   pinCode: text("pin_code"),
   gpsLocation: text("gps_location"),
   gpsEnabled: boolean("gps_enabled").default(false),
@@ -42,7 +44,7 @@ export const requests = pgTable("requests", {
   // Location where help is needed (optional)
   helpLocationState: text("help_location_state"),
   helpLocationDistrict: text("help_location_district"),
-  helpLocationPinCode: text("help_location_pin_code"),
+  helpLocationArea: text("help_location_area"),
   helpLocationGps: text("help_location_gps"),
   helpLocationNotApplicable: boolean("help_location_not_applicable").default(false),
   targetExpertId: integer("target_expert_id").references(() => users.id),
@@ -61,6 +63,17 @@ export const responses = pgTable("responses", {
   attachments: text("attachments").array(),
   isHelpful: boolean("is_helpful"),
   helpfulCount: integer("helpful_count").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const privateMessages = pgTable("private_messages", {
+  id: serial("id").primaryKey(),
+  requestId: integer("request_id").references(() => requests.id).notNull(),
+  senderId: integer("sender_id").references(() => users.id).notNull(),
+  receiverId: integer("receiver_id").references(() => users.id).notNull(),
+  content: text("content").notNull(),
+  attachments: text("attachments").array(),
+  isRead: boolean("is_read").default(false),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -111,7 +124,7 @@ export const insertRequestSchema = z.object({
   helpType: z.enum(["general", "specific"]),
   helpLocationState: z.string().nullable().optional(),
   helpLocationDistrict: z.string().nullable().optional(),
-  helpLocationPinCode: z.string().nullable().optional(),
+  helpLocationArea: z.string().nullable().optional(),
   helpLocationGps: z.string().nullable().optional(),
   helpLocationNotApplicable: z.boolean().default(false),
   targetExpertId: z.number().nullable().optional(),
@@ -121,7 +134,6 @@ export const insertRequestSchema = z.object({
 export const insertResponseSchema = createInsertSchema(responses).omit({
   id: true,
   createdAt: true,
-  helpfulCount: true,
 });
 
 export const insertReviewSchema = createInsertSchema(reviews).omit({
@@ -135,6 +147,11 @@ export const insertOtpSchema = createInsertSchema(otpVerifications).omit({
   verified: true,
 });
 
+export const insertPrivateMessageSchema = createInsertSchema(privateMessages).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Types
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -144,6 +161,9 @@ export type InsertRequest = z.infer<typeof insertRequestSchema>;
 
 export type Response = typeof responses.$inferSelect;
 export type InsertResponse = z.infer<typeof insertResponseSchema>;
+
+export type PrivateMessage = typeof privateMessages.$inferSelect;
+export type InsertPrivateMessage = z.infer<typeof insertPrivateMessageSchema>;
 
 export type Review = typeof reviews.$inferSelect;
 export type InsertReview = z.infer<typeof insertReviewSchema>;
@@ -162,6 +182,11 @@ export type RequestWithUser = Request & {
 
 export type ResponseWithExpert = Response & {
   expert: Pick<User, 'id' | 'name' | 'profession' | 'batchYear' | 'profileImage'>;
+};
+
+export type PrivateMessageWithUser = PrivateMessage & {
+  sender: Pick<User, 'id' | 'name' | 'profession' | 'batchYear' | 'profileImage'>;
+  receiver: Pick<User, 'id' | 'name' | 'profession' | 'batchYear' | 'profileImage'>;
 };
 
 export type ExpertWithStats = User & {
@@ -192,6 +217,21 @@ export const responsesRelations = relations(responses, ({ one }) => ({
   }),
   expert: one(users, {
     fields: [responses.expertId],
+    references: [users.id],
+  }),
+}));
+
+export const privateMessagesRelations = relations(privateMessages, ({ one }) => ({
+  request: one(requests, {
+    fields: [privateMessages.requestId],
+    references: [requests.id],
+  }),
+  sender: one(users, {
+    fields: [privateMessages.senderId],
+    references: [users.id],
+  }),
+  receiver: one(users, {
+    fields: [privateMessages.receiverId],
     references: [users.id],
   }),
 }));

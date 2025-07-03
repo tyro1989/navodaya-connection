@@ -28,9 +28,11 @@ export interface IStorage {
   
   // Request management
   createRequest(request: InsertRequest): Promise<Request>;
+  getRequest(id: number): Promise<Request | undefined>;
   getRequestById(id: number): Promise<RequestWithUser | undefined>;
   getRequestsByUserId(userId: number): Promise<RequestWithUser[]>;
   getOpenRequests(limit?: number): Promise<RequestWithUser[]>;
+  updateRequest(id: number, updates: Partial<Pick<Request, 'title' | 'description'>>): Promise<Request | undefined>;
   updateRequestStatus(id: number, status: string): Promise<Request | undefined>;
   
   // Response management
@@ -44,14 +46,23 @@ export interface IStorage {
   
   // Expert stats
   getExpertStats(expertId: number): Promise<ExpertStats | undefined>;
-  updateExpertStats(expertId: number): Promise<void>;
+  updateExpertStats(expertId: number, updates: Partial<ExpertStats>): Promise<void>;
   
-  // Dashboard data
+  // Dashboard stats
   getDashboardStats(): Promise<{
     totalRequests: number;
     activeExperts: number;
-    averageResponseTime: string;
-    communityRating: number;
+    resolvedRequests: number;
+    totalResponses: number;
+  }>;
+  
+  // Personal stats
+  getPersonalStats(userId: number): Promise<{
+    requestsPosted: number;
+    requestsResponded: number;
+    requestsResolved: number;
+    reviewsGiven: number;
+    reviewsReceived: number;
   }>;
 }
 
@@ -269,6 +280,10 @@ export class MemStorage implements IStorage {
     return request;
   }
 
+  async getRequest(id: number): Promise<Request | undefined> {
+    return this.requests.get(id);
+  }
+
   async getRequestById(id: number): Promise<RequestWithUser | undefined> {
     const request = this.requests.get(id);
     if (!request) return undefined;
@@ -343,7 +358,7 @@ export class MemStorage implements IStorage {
     }));
   }
 
-  async updateRequestStatus(id: number, status: string): Promise<Request | undefined> {
+  async updateRequest(id: number, updates: Partial<Pick<Request, 'title' | 'description'>>): Promise<Request | undefined> {
     const request = this.requests.get(id);
     if (!request) return undefined;
     
@@ -492,6 +507,32 @@ export class MemStorage implements IStorage {
       activeExperts,
       averageResponseTime: "12 mins",
       communityRating: Number(communityRating.toFixed(1))
+    };
+  }
+
+  async getPersonalStats(userId: number): Promise<{
+    requestsPosted: number;
+    requestsResponded: number;
+    requestsResolved: number;
+    reviewsGiven: number;
+    reviewsReceived: number;
+  }> {
+    const userRequests = Array.from(this.requests.values()).filter(r => r.userId === userId);
+    const requestsPosted = userRequests.length;
+    const requestsResolved = userRequests.filter(r => r.status === "resolved").length;
+    
+    const userResponses = Array.from(this.responses.values()).filter(r => r.expertId === userId);
+    const requestsResponded = userResponses.length;
+    
+    const reviewsGiven = Array.from(this.reviews.values()).filter(r => r.userId === userId).length;
+    const reviewsReceived = Array.from(this.reviews.values()).filter(r => r.expertId === userId).length;
+
+    return {
+      requestsPosted,
+      requestsResponded,
+      requestsResolved,
+      reviewsGiven,
+      reviewsReceived
     };
   }
 }
@@ -1268,6 +1309,28 @@ export class FileStorage implements IStorage {
       communityRating: Number((avgRating.avg || 0).toFixed(1))
     };
   }
+
+  async getPersonalStats(userId: number): Promise<{
+    requestsPosted: number;
+    requestsResponded: number;
+    requestsResolved: number;
+    reviewsGiven: number;
+    reviewsReceived: number;
+  }> {
+    const requestsPosted = this.db.prepare('SELECT COUNT(*) as count FROM requests WHERE userId = ?').get(userId) as { count: number };
+    const requestsResolved = this.db.prepare('SELECT COUNT(*) as count FROM requests WHERE userId = ? AND status = "resolved"').get(userId) as { count: number };
+    const requestsResponded = this.db.prepare('SELECT COUNT(*) as count FROM responses WHERE expertId = ?').get(userId) as { count: number };
+    const reviewsGiven = this.db.prepare('SELECT COUNT(*) as count FROM reviews WHERE userId = ?').get(userId) as { count: number };
+    const reviewsReceived = this.db.prepare('SELECT COUNT(*) as count FROM reviews WHERE expertId = ?').get(userId) as { count: number };
+
+    return {
+      requestsPosted: requestsPosted.count,
+      requestsResponded: requestsResponded.count,
+      requestsResolved: requestsResolved.count,
+      reviewsGiven: reviewsGiven.count,
+      reviewsReceived: reviewsReceived.count
+    };
+  }
 }
 
 export class PersistentMemStorage extends MemStorage {
@@ -1392,6 +1455,26 @@ export class PersistentMemStorage extends MemStorage {
 
   async updateRequestStatus(id: number, status: string): Promise<Request | undefined> {
     const request = await super.updateRequestStatus(id, status);
+    this.saveData();
+    return request;
+  }
+
+  async getRequest(id: number): Promise<Request | undefined> {
+    return this.requests.get(id);
+  }
+
+  async updateRequest(id: number, updates: Partial<Pick<Request, 'title' | 'description'>>): Promise<Request | undefined> {
+    const request = this.requests.get(id);
+    if (!request) return undefined;
+    
+    if (updates.title !== undefined) {
+      request.title = updates.title;
+    }
+    if (updates.description !== undefined) {
+      request.description = updates.description;
+    }
+    request.updatedAt = new Date();
+    
     this.saveData();
     return request;
   }
@@ -1790,6 +1873,51 @@ export class DatabaseStorage implements IStorage {
       communityRating: Number(avgRatingResult.avgRating) || 4.2
     };
   }
+
+  async getPersonalStats(userId: number): Promise<{
+    requestsPosted: number;
+    requestsResponded: number;
+    requestsResolved: number;
+    reviewsGiven: number;
+    reviewsReceived: number;
+  }> {
+    const [requestsPostedResult] = await db
+      .select({ count: sql`count(*)` })
+      .from(requests)
+      .where(eq(requests.userId, userId));
+
+    const [requestsRespondedResult] = await db
+      .select({ count: sql`count(*)` })
+      .from(responses)
+      .where(eq(responses.expertId, userId));
+
+    const [requestsResolvedResult] = await db
+      .select({ count: sql`count(*)` })
+      .from(requests)
+      .innerJoin(responses, eq(requests.id, responses.requestId))
+      .where(and(
+        eq(responses.expertId, userId),
+        eq(requests.resolved, true)
+      ));
+
+    const [reviewsGivenResult] = await db
+      .select({ count: sql`count(*)` })
+      .from(reviews)
+      .where(eq(reviews.userId, userId));
+
+    const [reviewsReceivedResult] = await db
+      .select({ count: sql`count(*)` })
+      .from(reviews)
+      .where(eq(reviews.expertId, userId));
+
+    return {
+      requestsPosted: Number(requestsPostedResult.count) || 0,
+      requestsResponded: Number(requestsRespondedResult.count) || 0,
+      requestsResolved: Number(requestsResolvedResult.count) || 0,
+      reviewsGiven: Number(reviewsGivenResult.count) || 0,
+      reviewsReceived: Number(reviewsReceivedResult.count) || 0,
+    };
+  }
 }
 
-export const storage = new DatabaseStorage();
+export const storage = new PersistentMemStorage();

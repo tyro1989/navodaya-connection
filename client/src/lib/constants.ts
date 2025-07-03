@@ -15,6 +15,7 @@ export const PROFESSION_CATEGORIES = [
 ];
 
 export const HELP_AREAS_CATEGORIES = [
+  "All areas - general purpose",
   "Academics & Research",
   "Business & Management",
   "Engineering & Technology", 
@@ -28,8 +29,20 @@ export const HELP_AREAS_CATEGORIES = [
   "Other"
 ];
 
-// Same categories for expertise areas for consistency
-export const EXPERTISE_CATEGORIES = HELP_AREAS_CATEGORIES;
+// Keep expertise categories same for backward compatibility
+export const EXPERTISE_CATEGORIES = [
+  "Academics & Research",
+  "Business & Management",
+  "Engineering & Technology", 
+  "Government (Civil, Police etc.)",
+  "Media & Entertainment",
+  "Law & Legal",
+  "Medicine & Healthcare",
+  "Farming & Agriculture",
+  "Studying & Education", 
+  "Sports & Fitness",
+  "Other"
+];
 
 // Indian States
 export const INDIAN_STATES = [

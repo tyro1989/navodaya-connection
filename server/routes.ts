@@ -1,10 +1,61 @@
-import type { Express } from "express";
+import { type Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { insertUserSchema, insertRequestSchema, insertResponseSchema, insertReviewSchema, insertOtpSchema } from "@shared/schema";
 import { z } from "zod";
+import { Router } from "express";
+import multer from "multer";
+import path from "path";
+import { mkdir } from "fs/promises";
+import { existsSync } from "fs";
+import express from "express";
+
+const router = Router();
+
+// Configure multer for profile image uploads
+const profileImageStorage = multer.diskStorage({
+  destination: async (req, file, cb) => {
+    const uploadDir = path.join(process.cwd(), 'uploads', 'profile-images');
+    if (!existsSync(uploadDir)) {
+      await mkdir(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const extension = path.extname(file.originalname);
+    cb(null, `profile-${uniqueSuffix}${extension}`);
+  }
+});
+
+const profileImageUpload = multer({
+  storage: profileImageStorage,
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Please upload a JPEG, PNG, GIF, or WebP image.'));
+    }
+  }
+});
+
+// Authentication middleware
+const authenticateUser = (req: Request, res: Response, next: any) => {
+  const userId = req.session.userId;
+  if (!userId) {
+    return res.status(401).json({ error: "Not authenticated" });
+  }
+  next();
+};
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Serve static files for uploaded images
+  app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+
   // Authentication routes
   app.post("/api/auth/send-otp", async (req, res) => {
     try {
@@ -14,8 +65,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Phone number is required" });
       }
       
-      // For development phone number, use mock OTP
-      if (process.env.NODE_ENV === "development" && phone === "+919999999999") {
+      // For development mode, use mock OTP for any phone number
+      if (process.env.NODE_ENV === "development") {
         await storage.createOtpVerification({
           phone,
           otp: "123456", // Mock OTP for development
@@ -53,8 +104,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { phone, otp } = req.body;
       
-      // Handle development mode mock OTP
-      if (process.env.NODE_ENV === "development" && phone === "+919999999999" && otp === "123456") {
+      // Handle development mode mock OTP for any phone number
+      if (process.env.NODE_ENV === "development" && otp === "123456") {
         // Check if user exists
         const existingUser = await storage.getUserByPhone(phone);
         if (existingUser) {
@@ -236,6 +287,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Update request endpoint (for editing)
+  app.put("/api/requests/:id", authenticateUser, async (req: Request, res: Response) => {
+    try {
+      const requestId = parseInt(req.params.id);
+      const { title, description } = req.body;
+      const userId = req.session.userId;
+
+      if (!title || !description) {
+        return res.status(400).json({ error: "Title and description are required" });
+      }
+
+      // Check if the user owns this request
+      const existingRequest = await storage.getRequest(requestId);
+      if (!existingRequest || existingRequest.userId !== userId) {
+        return res.status(404).json({ error: "Request not found or unauthorized" });
+      }
+
+      // Update the request
+      const updatedRequest = await storage.updateRequest(requestId, { title, description });
+      
+      res.json({
+        success: true,
+        message: "Request updated successfully",
+        request: updatedRequest
+      });
+    } catch (error) {
+      console.error("Error updating request:", error);
+      res.status(500).json({ error: "Failed to update request" });
+    }
+  });
+
   // Response routes
   app.post("/api/responses", async (req, res) => {
     try {
@@ -331,6 +413,106 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ stats });
     } catch (error) {
       res.status(500).json({ message: "Failed to get expert stats" });
+    }
+  });
+
+  app.get("/api/stats/personal", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+      
+      const stats = await storage.getPersonalStats(req.session.userId);
+      res.json({ stats });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get personal stats" });
+    }
+  });
+
+  // Private messaging routes
+  app.post("/api/messages", authenticateUser, async (req: Request, res: Response) => {
+    try {
+      const { requestId, receiverId, content } = req.body;
+      const senderId = req.session.userId;
+
+      if (!requestId || !receiverId || !content) {
+        return res.status(400).json({ error: "Request ID, receiver ID, and content are required" });
+      }
+
+      const message = await storage.createPrivateMessage({
+        requestId,
+        senderId,
+        receiverId,
+        content,
+        attachments: [],
+      });
+
+      res.json({ message });
+    } catch (error) {
+      console.error("Error creating private message:", error);
+      res.status(500).json({ error: "Failed to send message" });
+    }
+  });
+
+  app.get("/api/messages/conversation/:requestId/:otherUserId", authenticateUser, async (req: Request, res: Response) => {
+    try {
+      const requestId = parseInt(req.params.requestId);
+      const otherUserId = parseInt(req.params.otherUserId);
+      const userId = req.session.userId;
+
+      const messages = await storage.getPrivateMessages(requestId, userId, otherUserId);
+      
+      res.json({ messages });
+    } catch (error) {
+      console.error("Error fetching messages:", error);
+      res.status(500).json({ error: "Failed to fetch messages" });
+    }
+  });
+
+  app.get("/api/messages/conversations", authenticateUser, async (req: Request, res: Response) => {
+    try {
+      const userId = req.session.userId;
+      const conversations = await storage.getUserConversations(userId);
+      
+      res.json({ conversations });
+    } catch (error) {
+      console.error("Error fetching conversations:", error);
+      res.status(500).json({ error: "Failed to fetch conversations" });
+    }
+  });
+
+  app.put("/api/messages/:id/read", authenticateUser, async (req: Request, res: Response) => {
+    try {
+      const messageId = parseInt(req.params.id);
+      const userId = req.session.userId;
+
+      await storage.markMessageAsRead(messageId, userId);
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error marking message as read:", error);
+      res.status(500).json({ error: "Failed to mark message as read" });
+    }
+  });
+
+  // Profile image upload endpoint
+  app.post("/api/upload/profile-image", authenticateUser, profileImageUpload.single('image'), (req: Request, res: Response) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      // Return the relative path to the uploaded file
+      const imageUrl = `/uploads/profile-images/${req.file.filename}`;
+      
+      res.json({
+        success: true,
+        url: imageUrl,
+        message: "Profile image uploaded successfully"
+      });
+    } catch (error) {
+      console.error("Profile image upload error:", error);
+      res.status(500).json({ error: "Failed to upload profile image" });
     }
   });
 

@@ -20,8 +20,6 @@ export default function Navigation() {
   if (!user) return null;
 
   const navItems = [
-    { path: "/", label: "Find Experts", icon: Search },
-    { path: "/my-requests", label: "My Requests", icon: MessageCircle },
     { path: "/expert-dashboard", label: "Dashboard", icon: BarChart3, expertOnly: true },
     { path: "/expert-requests", label: "Expert Requests", icon: Users, expertOnly: true },
   ];

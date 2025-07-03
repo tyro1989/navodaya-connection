@@ -62,7 +62,7 @@ export default function ResponseForm({ requestId, onSuccess }: ResponseFormProps
 
   return (
     <div className="border-t border-gray-100 pt-6">
-      <h4 className="font-semibold text-gray-900 mb-4">Provide Your Response</h4>
+      <h4 className="font-semibold text-gray-900 mb-4">Offer Your Support</h4>
       
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
@@ -75,7 +75,7 @@ export default function ResponseForm({ requestId, onSuccess }: ResponseFormProps
                 <FormControl>
                   <Textarea
                     rows={4}
-                    placeholder="Share your advice, experience, or guidance..."
+                    placeholder="Share your advice, experience, guidance, or offer any help you can provide..."
                     className="resize-none"
                     {...field}
                   />

@@ -37,12 +37,12 @@ export default function RequestDetail() {
   const requestId = parseInt(id || "0");
 
   const { data: requestData, isLoading } = useQuery({
-    queryKey: ["/api/requests", requestId],
+    queryKey: [`/api/requests/${requestId}`],
     enabled: !!requestId,
   });
 
   const { data: responsesData } = useQuery({
-    queryKey: ["/api/responses/request", requestId],
+    queryKey: [`/api/responses/request/${requestId}`],
     enabled: !!requestId,
   });
 
@@ -56,7 +56,7 @@ export default function RequestDetail() {
         title: "Response marked as helpful!",
         description: "Thank you for your feedback.",
       });
-      queryClient.invalidateQueries({ queryKey: ["/api/responses/request", requestId] });
+      queryClient.invalidateQueries({ queryKey: [`/api/responses/request/${requestId}`] });
     },
   });
 
@@ -111,7 +111,7 @@ export default function RequestDetail() {
 
   const isUrgent = request.urgency === "urgent" || request.urgency === "critical";
   const isResolved = request.status === "resolved";
-  const canRespond = user?.isExpert && request.userId !== user.id && !isResolved;
+  const canRespond = user && request.userId !== user.id && !isResolved;
 
   const handleWhatsAppContact = (expert: ResponseWithExpert["expert"]) => {
     const message = encodeURIComponent(
@@ -229,7 +229,7 @@ export default function RequestDetail() {
             <CardHeader>
               <CardTitle className="flex items-center space-x-2">
                 <MessageCircle className="h-5 w-5 text-primary" />
-                <span>Expert Responses ({responses.length})</span>
+                <span>Community Responses ({responses.length})</span>
               </CardTitle>
             </CardHeader>
             <CardContent className="p-6">
@@ -330,7 +330,7 @@ export default function RequestDetail() {
               <MessageCircle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
               <h3 className="text-lg font-semibold text-gray-900 mb-2">No responses yet</h3>
               <p className="text-gray-600">
-                This request is waiting for expert responses. 
+                This request is waiting for community responses. 
                 {canRespond && " You can be the first to help!"}
               </p>
             </CardContent>

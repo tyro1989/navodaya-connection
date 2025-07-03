@@ -15,7 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { insertRequestSchema } from "@shared/schema";
 import { z } from "zod";
-import { Edit, NotebookPen, CloudUpload, MapPin, Navigation } from "lucide-react";
+import { Edit, NotebookPen, CloudUpload, MapPin, Navigation, FileText, X } from "lucide-react";
 import { EXPERTISE_CATEGORIES, INDIAN_STATES, INDIAN_DISTRICTS } from "@/lib/constants";
 
 type RequestFormData = z.infer<typeof insertRequestSchema>;
@@ -25,6 +25,7 @@ export default function RequestForm() {
   const queryClient = useQueryClient();
   const [charCount, setCharCount] = useState(0);
   const [gettingLocation, setGettingLocation] = useState(false);
+  const [attachments, setAttachments] = useState<File[]>([]);
 
   const form = useForm<RequestFormData>({
     resolver: zodResolver(insertRequestSchema),
@@ -36,7 +37,7 @@ export default function RequestForm() {
       helpType: "general", // Still needed for backend
       helpLocationState: null,
       helpLocationDistrict: null,
-      helpLocationPinCode: null,
+      helpLocationArea: null,
       helpLocationGps: null,
       helpLocationNotApplicable: false,
       attachments: [],
@@ -51,11 +52,13 @@ export default function RequestForm() {
     },
     onSuccess: () => {
       toast({
-        title: "Request posted successfully!",
-        description: "Your request has been posted and experts will be notified.",
+        title: "Request posted successfully! 🎉",
+        description: "Your request has been shared with the community. Experts will be notified and can respond to help you. You'll receive notifications when someone responds.",
+        duration: 6000, // Show for 6 seconds
       });
       form.reset();
       setCharCount(0);
+      setAttachments([]);
       queryClient.invalidateQueries({ 
         predicate: (query) => 
           typeof query.queryKey[0] === 'string' && query.queryKey[0].includes('/api/requests')
@@ -75,7 +78,37 @@ export default function RequestForm() {
     console.log("Form submitted with data:", data);
     console.log("Form validation errors:", form.formState.errors);
     console.log("Form is valid:", form.formState.isValid);
-    createRequestMutation.mutate(data);
+    
+    // Convert file names to attachments array for now
+    const attachmentNames = attachments.map(file => file.name);
+    const dataWithAttachments = {
+      ...data,
+      attachments: attachmentNames,
+    };
+    
+    createRequestMutation.mutate(dataWithAttachments);
+  };
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || []);
+    const maxFileSize = 5 * 1024 * 1024; // 5MB
+    const validFiles = files.filter(file => {
+      if (file.size > maxFileSize) {
+        toast({
+          title: "File too large",
+          description: `${file.name} is larger than 5MB and cannot be uploaded.`,
+          variant: "destructive",
+        });
+        return false;
+      }
+      return true;
+    });
+    
+    setAttachments(prev => [...prev, ...validFiles]);
+  };
+
+  const removeAttachment = (index: number) => {
+    setAttachments(prev => prev.filter((_, i) => i !== index));
   };
 
   // Note: Debugging moved to button click handler to avoid constant re-renders
@@ -128,14 +161,14 @@ export default function RequestForm() {
 
   return (
     <Card className="shadow-sm border border-gray-100">
-      <CardContent className="p-6">
-        <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center space-x-2">
-          <Edit className="text-primary" />
+      <CardContent className="p-4">
+        <h2 className="text-lg font-semibold text-gray-900 mb-3 flex items-center space-x-2">
+          <Edit className="text-primary h-5 w-5" />
           <span>Post Your Request</span>
         </h2>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3">
             <FormField
               control={form.control}
               name="title"
@@ -265,7 +298,7 @@ export default function RequestForm() {
                             // Clear location fields when "not applicable" is selected
                             form.setValue("helpLocationState", null);
                             form.setValue("helpLocationDistrict", null);
-                            form.setValue("helpLocationPinCode", null);
+                            form.setValue("helpLocationArea", null);
                             form.setValue("helpLocationGps", null);
                           }
                         }}
@@ -352,13 +385,13 @@ export default function RequestForm() {
 
                   <FormField
                     control={form.control}
-                    name="helpLocationPinCode"
+                    name="helpLocationArea"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>PIN Code</FormLabel>
+                        <FormLabel>Area/Landmark</FormLabel>
                         <FormControl>
                           <Input
-                            placeholder="e.g., 560001"
+                            placeholder="e.g., Koramangala, Near Metro Station"
                             {...field}
                             value={field.value ?? ""}
                             onChange={(e) => field.onChange(e.target.value || null)}
@@ -393,10 +426,44 @@ export default function RequestForm() {
               <Label className="text-sm font-medium text-gray-700 mb-2 block">
                 Attachments (Optional)
               </Label>
-              <div className="border-2 border-dashed border-gray-200 rounded-lg p-4 text-center hover:border-primary-300 transition-colors cursor-pointer">
-                <CloudUpload className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-                <p className="text-sm text-gray-600">Click to upload files or drag and drop</p>
-                <p className="text-xs text-gray-500 mt-1">Max 5MB per file</p>
+              <div className="space-y-3">
+                <label className="relative block border-2 border-dashed border-gray-200 rounded-lg p-4 text-center hover:border-primary-300 transition-colors cursor-pointer">
+                  <input
+                    type="file"
+                    multiple
+                    onChange={handleFileUpload}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png,.gif"
+                  />
+                  <CloudUpload className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+                  <p className="text-sm text-gray-600">Click to upload files or drag and drop</p>
+                  <p className="text-xs text-gray-500 mt-1">Max 5MB per file • PDF, DOC, images</p>
+                </label>
+                
+                {attachments.length > 0 && (
+                  <div className="space-y-2">
+                    {attachments.map((file, index) => (
+                      <div key={index} className="flex items-center justify-between bg-gray-50 p-2 rounded-md">
+                        <div className="flex items-center space-x-2 flex-1">
+                          <FileText className="h-4 w-4 text-gray-500" />
+                          <span className="text-sm text-gray-700 truncate">{file.name}</span>
+                          <span className="text-xs text-gray-500">
+                            ({(file.size / 1024 / 1024).toFixed(1)} MB)
+                          </span>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => removeAttachment(index)}
+                          className="h-6 w-6 p-0 hover:bg-red-100"
+                        >
+                          <X className="h-3 w-3 text-red-500" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -437,7 +504,7 @@ export default function RequestForm() {
                     helpType: "general" as const,
                     helpLocationState: null,
                     helpLocationDistrict: null,
-                    helpLocationPinCode: null,
+                    helpLocationArea: null,
                     helpLocationGps: null,
                     helpLocationNotApplicable: false,
                     targetExpertId: null,
@@ -457,6 +524,7 @@ export default function RequestForm() {
                 onClick={() => {
                   form.reset();
                   setCharCount(0);
+                  setAttachments([]);
                 }}
               >
                 Clear

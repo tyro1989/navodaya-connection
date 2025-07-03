@@ -39,6 +39,7 @@ const otpSchema = z.object({
 
 // Development login schema - JNV fields mandatory, rest optional
 const devLoginSchema = z.object({
+  phone: z.string().min(10, "Phone number is required").regex(/^\+?[1-9]\d{1,14}$/, "Please enter a valid phone number"),
   name: z.string().min(2, "Name must be at least 2 characters"),
   batchYear: z.number().min(1990).max(new Date().getFullYear(), "Please select a valid batch year"),
   state: z.string().min(1, "JNV state is required"),
@@ -88,10 +89,11 @@ export default function Auth() {
   const devLoginForm = useForm<DevLoginFormData>({
     resolver: zodResolver(devLoginSchema),
     defaultValues: { 
+      phone: "+91",
       name: "", 
       batchYear: 2020,
-      state: "",
-      district: "",
+      state: "Uttar Pradesh",
+      district: "Ayodhya",
       email: "",
       profession: "Studying",
       pinCode: "560001",
@@ -113,8 +115,8 @@ export default function Auth() {
       batchYear: 2020,
       profession: "",
       professionOther: "",
-      state: "",
-      district: "",
+      state: "Uttar Pradesh",
+      district: "Ayodhya",
       pinCode: "",
       gpsLocation: "",
       gpsEnabled: false,
@@ -133,15 +135,15 @@ export default function Auth() {
 
   const handleDevLogin = async (data: DevLoginFormData) => {
     try {
-      // Create a mock phone number for development
-      const mockPhone = "+919999999999";
+      // Use the actual phone number provided by the user
+      const phoneNumber = data.phone;
       
       // First, try to send OTP to check if user exists
       try {
-        await sendOtp(mockPhone);
+        await sendOtp(phoneNumber);
         // If user exists, login with a mock OTP
         const mockOtp = "123456";
-        const loginResult = await login(mockPhone, mockOtp);
+        const loginResult = await login(phoneNumber, mockOtp);
         
         if (!loginResult.isNewUser) {
           // User exists, update their profile with new dev login data if needed
@@ -158,7 +160,7 @@ export default function Auth() {
       
       // If we reach here, create a new user
       const userData = {
-        phone: mockPhone,
+        phone: phoneNumber,
         name: data.name,
         email: data.email || "",
         batchYear: data.batchYear,
@@ -296,10 +298,27 @@ export default function Auth() {
                 <form onSubmit={devLoginForm.handleSubmit(handleDevLogin)} className="space-y-4">
                   <FormField
                     control={devLoginForm.control}
+                    name="phone"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Phone Number *</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="+919876543210"
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  
+                  <FormField
+                    control={devLoginForm.control}
                     name="name"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Full Name</FormLabel>
+                        <FormLabel>Full Name *</FormLabel>
                         <FormControl>
                           <Input
                             placeholder="Enter your full name"

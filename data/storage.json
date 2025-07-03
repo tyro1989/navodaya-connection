@@ -99,10 +99,124 @@
       "lastActive": "2025-07-02T12:02:01.401Z",
       "createdAt": "2025-07-02T12:02:01.401Z",
       "gender": ""
+    },
+    "5": {
+      "phone": "+919821489589",
+      "name": "Ritesh",
+      "email": "",
+      "batchYear": 2020,
+      "profession": "Studying",
+      "professionOther": "",
+      "state": "Uttar Pradesh",
+      "district": "Gonda",
+      "pinCode": "560001",
+      "gpsLocation": "",
+      "gpsEnabled": false,
+      "helpAreas": [],
+      "helpAreasOther": "",
+      "expertiseAreas": [],
+      "isExpert": false,
+      "dailyRequestLimit": 3,
+      "phoneVisible": false,
+      "upiId": "",
+      "bio": "",
+      "profileImage": "",
+      "isActive": true,
+      "id": 5,
+      "lastActive": "2025-07-02T16:20:27.532Z",
+      "createdAt": "2025-07-02T16:20:27.532Z"
+    },
+    "6": {
+      "phone": "+919821489588",
+      "name": "New Guy",
+      "email": "",
+      "batchYear": 2020,
+      "profession": "Studying",
+      "professionOther": "",
+      "state": "Uttar Pradesh",
+      "district": "Ayodhya",
+      "pinCode": "560001",
+      "gpsLocation": "",
+      "gpsEnabled": false,
+      "helpAreas": [],
+      "helpAreasOther": "",
+      "expertiseAreas": [],
+      "isExpert": false,
+      "dailyRequestLimit": 3,
+      "phoneVisible": false,
+      "upiId": "",
+      "bio": "",
+      "profileImage": "",
+      "isActive": true,
+      "id": 6,
+      "lastActive": "2025-07-02T17:18:20.793Z",
+      "createdAt": "2025-07-02T17:18:20.793Z"
     }
   },
-  "requests": {},
-  "responses": {},
+  "requests": {
+    "1": {
+      "userId": 5,
+      "title": "Test",
+      "description": "Test",
+      "expertiseRequired": null,
+      "urgency": "high",
+      "helpType": "general",
+      "helpLocationState": "Uttar Pradesh",
+      "helpLocationDistrict": "Ayodhya",
+      "helpLocationArea": null,
+      "helpLocationGps": null,
+      "helpLocationNotApplicable": false,
+      "attachments": [
+        "Screenshot 2025-06-17 at 12.31.16 AM.png"
+      ],
+      "id": 1,
+      "status": "open",
+      "resolved": false,
+      "createdAt": "2025-07-02T16:52:41.349Z",
+      "updatedAt": "2025-07-02T16:52:41.349Z"
+    },
+    "2": {
+      "userId": 6,
+      "title": "I need a placement advice",
+      "description": "which college should I join for the UPTU?",
+      "expertiseRequired": null,
+      "urgency": "medium",
+      "helpType": "general",
+      "helpLocationState": null,
+      "helpLocationDistrict": null,
+      "helpLocationArea": null,
+      "helpLocationGps": null,
+      "helpLocationNotApplicable": true,
+      "attachments": [],
+      "id": 2,
+      "status": "open",
+      "resolved": false,
+      "createdAt": "2025-07-03T08:40:23.731Z",
+      "updatedAt": "2025-07-03T08:40:23.731Z"
+    }
+  },
+  "responses": {
+    "1": {
+      "requestId": 1,
+      "expertId": 6,
+      "content": "please reach out to me at xxxyyy",
+      "attachments": [],
+      "id": 1,
+      "helpfulCount": 1,
+      "createdAt": "2025-07-03T07:18:30.520Z",
+      "isHelpful": true
+    },
+    "2": {
+      "requestId": 1,
+      "expertId": 6,
+      "content": "please reach out to me at xxyyzz",
+      "attachments": [],
+      "id": 2,
+      "helpfulCount": 1,
+      "createdAt": "2025-07-03T07:18:41.610Z",
+      "isHelpful": true
+    }
+  },
   "reviews": {},
   "expertStats": {
     "1": {
@@ -134,24 +248,66 @@
       "helpfulResponses": 187,
       "todayResponses": 0,
       "lastResetDate": "2025-07-02T12:00:33.609Z"
+    },
+    "6": {
+      "id": 4,
+      "expertId": 6,
+      "totalResponses": 2,
+      "averageRating": "0",
+      "totalReviews": 0,
+      "helpfulResponses": 0,
+      "todayResponses": 2,
+      "lastResetDate": "2025-07-03T07:18:30.521Z"
     }
   },
   "otpVerifications": {
     "+919999999999": {
       "phone": "+919999999999",
       "otp": "123456",
-      "expiresAt": "2025-07-03T12:21:36.610Z",
-      "id": 5,
+      "expiresAt": "2025-07-03T16:48:16.893Z",
+      "id": 17,
       "verified": false,
-      "createdAt": "2025-07-02T12:21:36.610Z"
+      "createdAt": "2025-07-02T16:48:16.894Z"
+    },
+    "+919876543210": {
+      "phone": "+919876543210",
+      "otp": "123456",
+      "expiresAt": "2025-07-03T16:15:20.461Z",
+      "id": 7,
+      "verified": false,
+      "createdAt": "2025-07-02T16:15:20.461Z"
+    },
+    "+919821489589": {
+      "phone": "+919821489589",
+      "otp": "123456",
+      "expiresAt": "2025-07-04T06:58:48.075Z",
+      "id": 29,
+      "verified": false,
+      "createdAt": "2025-07-03T06:58:48.075Z"
+    },
+    "+919123456789": {
+      "phone": "+919123456789",
+      "otp": "123456",
+      "expiresAt": "2025-07-03T16:51:55.251Z",
+      "id": 22,
+      "verified": false,
+      "createdAt": "2025-07-02T16:51:55.251Z"
+    },
+    "+919821489588": {
+      "phone": "+919821489588",
+      "otp": "123456",
+      "expiresAt": "2025-07-04T10:55:13.545Z",
+      "id": 34,
+      "verified": false,
+      "createdAt": "2025-07-03T10:55:13.545Z"
     }
   },
   "counters": {
-    "currentUserId": 5,
-    "currentRequestId": 1,
-    "currentResponseId": 1,
+    "currentUserId": 7,
+    "currentRequestId": 3,
+    "currentResponseId": 3,
     "currentReviewId": 1,
-    "currentStatsId": 4,
-    "currentOtpId": 6
+    "currentStatsId": 5,
+    "currentOtpId": 35
   }
 }
