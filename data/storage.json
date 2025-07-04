@@ -217,7 +217,40 @@
       "isHelpful": true
     }
   },
-  "reviews": {},
+  "reviews": {
+    "1": {
+      "requestId": 1,
+      "expertId": 6,
+      "userId": 5,
+      "rating": 5,
+      "id": 1,
+      "createdAt": "2025-07-03T11:30:43.627Z"
+    },
+    "2": {
+      "requestId": 1,
+      "expertId": 6,
+      "userId": 5,
+      "rating": 5,
+      "id": 2,
+      "createdAt": "2025-07-03T11:30:45.463Z"
+    },
+    "3": {
+      "requestId": 1,
+      "expertId": 6,
+      "userId": 5,
+      "rating": 5,
+      "id": 3,
+      "createdAt": "2025-07-03T11:31:45.671Z"
+    },
+    "4": {
+      "requestId": 1,
+      "expertId": 6,
+      "userId": 5,
+      "rating": 5,
+      "id": 4,
+      "createdAt": "2025-07-03T11:31:47.992Z"
+    }
+  },
   "expertStats": {
     "1": {
       "id": 1,
@@ -253,9 +286,9 @@
       "id": 4,
       "expertId": 6,
       "totalResponses": 2,
-      "averageRating": "0",
-      "totalReviews": 0,
-      "helpfulResponses": 0,
+      "averageRating": "5.0",
+      "totalReviews": 4,
+      "helpfulResponses": 2,
       "todayResponses": 2,
       "lastResetDate": "2025-07-03T07:18:30.521Z"
     }
@@ -280,10 +313,10 @@
     "+919821489589": {
       "phone": "+919821489589",
       "otp": "123456",
-      "expiresAt": "2025-07-04T06:58:48.075Z",
-      "id": 29,
+      "expiresAt": "2025-07-04T11:54:27.929Z",
+      "id": 39,
       "verified": false,
-      "createdAt": "2025-07-03T06:58:48.075Z"
+      "createdAt": "2025-07-03T11:54:27.929Z"
     },
     "+919123456789": {
       "phone": "+919123456789",
@@ -306,8 +339,8 @@
     "currentUserId": 7,
     "currentRequestId": 3,
     "currentResponseId": 3,
-    "currentReviewId": 1,
+    "currentReviewId": 5,
     "currentStatsId": 5,
-    "currentOtpId": 37
+    "currentOtpId": 40
   }
 }

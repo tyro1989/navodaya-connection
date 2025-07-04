@@ -478,7 +478,7 @@ export default function Home() {
                       <span className="text-sm text-gray-600">Community Rating</span>
                       <div className="flex items-center space-x-1">
                         <Star className="h-4 w-4 text-yellow-400 fill-current" />
-                        <span className="font-semibold text-gray-700">{stats.communityRating.toFixed(1)}</span>
+                        <span className="font-semibold text-gray-700">{stats.communityRating?.toFixed(1) || '0.0'}</span>
                       </div>
                     </div>
                   </div>

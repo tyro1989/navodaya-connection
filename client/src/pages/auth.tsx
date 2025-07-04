@@ -1,1029 +1,347 @@
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/lib/auth";
-import { insertUserSchema } from "@shared/schema";
-import { z } from "zod";
-import { GraduationCap, Phone, UserPlus, ChevronDown } from "lucide-react";
-import { 
-  PROFESSION_CATEGORIES, 
-  HELP_AREAS_CATEGORIES, 
-  EXPERTISE_CATEGORIES,
-  INDIAN_STATES,
-  INDIAN_DISTRICTS 
-} from "@/lib/constants";
+import { emailSignupSchema, emailLoginSchema } from "@shared/schema";
+import { apiRequest } from "@/lib/queryClient";
+import type { EmailSignup, EmailLogin } from "@shared/schema";
 
-// Development mode check
-const isDevelopment = import.meta.env.MODE === 'development';
-
-
-
-const phoneSchema = z.object({
-  phone: z.string().min(10, "Phone number must be at least 10 digits"),
-});
-
-const otpSchema = z.object({
-  otp: z.string().length(6, "OTP must be 6 digits"),
-});
-
-// Development login schema - JNV fields mandatory, rest optional
-const devLoginSchema = z.object({
-  phone: z.string().min(10, "Phone number is required").regex(/^\+?[1-9]\d{1,14}$/, "Please enter a valid phone number"),
-  name: z.string().min(2, "Name must be at least 2 characters"),
-  batchYear: z.number().min(1990).max(new Date().getFullYear(), "Please select a valid batch year"),
-  state: z.string().min(1, "JNV state is required"),
-  district: z.string().min(1, "JNV district is required"),
-  email: z.string().email("Please enter a valid email address").optional().or(z.literal("")),
-  profession: z.string().optional(),
-  professionOther: z.string().optional(),
-  pinCode: z.string().optional(),
-  isExpert: z.boolean().optional(),
-  expertiseAreas: z.array(z.string()).optional(),
-  helpAreas: z.array(z.string()).optional(),
-  dailyRequestLimit: z.number().min(1).max(20).optional(),
-  upiId: z.string().optional(),
-  bio: z.string().optional(),
-});
-
-const registrationSchema = insertUserSchema.extend({
-  expertiseAreas: z.array(z.string()).optional(),
-  helpAreas: z.array(z.string()).optional(),
-});
-
-type PhoneFormData = z.infer<typeof phoneSchema>;
-type OtpFormData = z.infer<typeof otpSchema>;
-type DevLoginFormData = z.infer<typeof devLoginSchema>;
-type RegistrationFormData = z.infer<typeof registrationSchema>;
-
-export default function Auth() {
+export default function AuthPage() {
+  const [isLogin, setIsLogin] = useState(true);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const { sendOtp, login, register } = useAuth();
-  
-  const [step, setStep] = useState<"phone" | "otp" | "register" | "dev-login">(isDevelopment ? "dev-login" : "phone");
-  const [phoneNumber, setPhoneNumber] = useState("");
-  const [generatedOtp, setGeneratedOtp] = useState("");
-  const [showOptionalFields, setShowOptionalFields] = useState(false);
+  const queryClient = useQueryClient();
 
-  const phoneForm = useForm<PhoneFormData>({
-    resolver: zodResolver(phoneSchema),
-    defaultValues: { phone: "" },
-  });
-
-  const otpForm = useForm<OtpFormData>({
-    resolver: zodResolver(otpSchema),
-    defaultValues: { otp: "" },
-  });
-
-  const devLoginForm = useForm<DevLoginFormData>({
-    resolver: zodResolver(devLoginSchema),
-    defaultValues: { 
-      phone: "+91",
-      name: "", 
-      batchYear: 2020,
-      state: "Uttar Pradesh",
-      district: "Ayodhya",
-      email: "",
-      profession: "Studying",
-      pinCode: "560001",
-      isExpert: false,
-      expertiseAreas: [],
-      helpAreas: [],
-      dailyRequestLimit: 3,
-      upiId: "",
-      bio: "",
-    },
-  });
-
-  const registrationForm = useForm<RegistrationFormData>({
-    resolver: zodResolver(registrationSchema),
+  // Login form
+  const loginForm = useForm<EmailLogin>({
+    resolver: zodResolver(emailLoginSchema),
     defaultValues: {
-      phone: "",
-      name: "",
       email: "",
-      batchYear: 2020,
-      profession: "",
-      professionOther: "",
-      state: "Uttar Pradesh",
-      district: "Ayodhya",
-      pinCode: "",
-      gpsLocation: "",
-      gpsEnabled: false,
-      helpAreas: [],
-      helpAreasOther: "",
-      expertiseAreas: [],
-      isExpert: false,
-      dailyRequestLimit: 3,
-      phoneVisible: false,
-      upiId: "",
-      bio: "",
-      profileImage: "",
-      isActive: true,
+      password: "",
     },
   });
 
-  const handleDevLogin = async (data: DevLoginFormData) => {
-    try {
-      // Use the actual phone number provided by the user
-      const phoneNumber = data.phone;
-      
-      // First, try to send OTP to check if user exists
-      try {
-        await sendOtp(phoneNumber);
-        // If user exists, login with a mock OTP
-        const mockOtp = "123456";
-        const loginResult = await login(phoneNumber, mockOtp);
-        
-        if (!loginResult.isNewUser) {
-          // User exists, update their profile with new dev login data if needed
-          toast({
-            title: "Development Login Successful!",
-            description: "You've been logged in with existing account for development testing.",
-          });
-          setLocation("/");
-          return;
-        }
-      } catch (error) {
-        // If sendOtp fails, user might not exist, continue with registration
-      }
-      
-      // If we reach here, create a new user
-      const userData = {
-        phone: phoneNumber,
-        name: data.name,
-        email: data.email || "",
-        batchYear: data.batchYear,
-        profession: data.profession || "Studying",
-        professionOther: data.professionOther || "",
-        state: data.state,
-        district: data.district,
-        pinCode: data.pinCode || "560001",
-        gpsLocation: "",
-        gpsEnabled: false,
-        helpAreas: data.helpAreas || [],
-        helpAreasOther: "",
-        expertiseAreas: data.expertiseAreas || [],
-        isExpert: data.isExpert || false,
-        dailyRequestLimit: data.dailyRequestLimit || 3,
-        phoneVisible: false,
-        upiId: data.upiId || "",
-        bio: data.bio || "",
-        profileImage: "",
-        isActive: true,
-      };
-      
-      await register(userData);
-      toast({
-        title: "Development Login Successful!",
-        description: "You've been logged in for development testing.",
+  // Signup form
+  const signupForm = useForm<EmailSignup>({
+    resolver: zodResolver(emailSignupSchema),
+    defaultValues: {
+      email: "",
+      password: "",
+      name: "",
+      batchYear: new Date().getFullYear(),
+      profession: "",
+      state: "",
+      district: "",
+    },
+  });
+
+  // Login mutation
+  const loginMutation = useMutation({
+    mutationFn: async (data: EmailLogin) => {
+      return apiRequest("/api/auth/login", {
+        method: "POST",
+        body: data,
       });
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Login successful",
+        description: "Welcome back!",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
       setLocation("/");
-    } catch (error: any) {
+    },
+    onError: (error: Error) => {
       toast({
         title: "Login failed",
-        description: error.message || "Please try again.",
+        description: error.message,
         variant: "destructive",
       });
-    }
-  };
+    },
+  });
 
-  const handleSendOtp = async (data: PhoneFormData) => {
-    try {
-      const result = await sendOtp(data.phone);
-      setPhoneNumber(data.phone);
-      if (result.otp) {
-        setGeneratedOtp(result.otp);
+  // Signup mutation
+  const signupMutation = useMutation({
+    mutationFn: async (data: EmailSignup) => {
+      return apiRequest("/api/auth/signup", {
+        method: "POST",
+        body: data,
+      });
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Account created successfully",
+        description: data.message,
+      });
+      // Show verification token in development
+      if (data.verificationToken) {
         toast({
-          title: "OTP Sent",
-          description: `Your OTP is: ${result.otp} (Demo mode)`,
-        });
-      } else {
-        toast({
-          title: "OTP Sent",
-          description: "Please check your SMS for the verification code.",
+          title: "Development Mode",
+          description: `Verification token: ${data.verificationToken}`,
+          duration: 10000,
         });
       }
-      setStep("otp");
-    } catch (error: any) {
+      setIsLogin(true);
+    },
+    onError: (error: Error) => {
       toast({
-        title: "Failed to send OTP",
-        description: error.message || "Please try again.",
+        title: "Signup failed",
+        description: error.message,
         variant: "destructive",
       });
-    }
+    },
+  });
+
+  const onLoginSubmit = (data: EmailLogin) => {
+    loginMutation.mutate(data);
   };
 
-  const handleVerifyOtp = async (data: OtpFormData) => {
-    try {
-      const result = await login(phoneNumber, data.otp);
-      if (result.isNewUser) {
-        registrationForm.setValue("phone", phoneNumber);
-        setStep("register");
-      } else {
-        toast({
-          title: "Welcome back!",
-          description: "You have been successfully logged in.",
-        });
-        setLocation("/");
-      }
-    } catch (error: any) {
-      toast({
-        title: "Invalid OTP",
-        description: "Please check your OTP and try again.",
-        variant: "destructive",
-      });
-    }
+  const onSignupSubmit = (data: EmailSignup) => {
+    signupMutation.mutate(data);
   };
 
-  const handleRegister = async (data: RegistrationFormData) => {
-    try {
-      await register(data);
-      toast({
-        title: "Registration successful!",
-        description: "Welcome to Navodaya Connection.",
-      });
-      setLocation("/");
-    } catch (error: any) {
-      toast({
-        title: "Registration failed",
-        description: error.message || "Please try again.",
-        variant: "destructive",
-      });
-    }
+  const handleSocialLogin = (provider: 'google' | 'facebook') => {
+    window.location.href = `/api/auth/${provider}`;
   };
 
-  // Use imported constants for consistency across the app
-  const currentYear = new Date().getFullYear();
-  const batchYears = Array.from({ length: 30 }, (_, i) => currentYear - i);
+  const states = [
+    "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh",
+    "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka",
+    "Kerala", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya", "Mizoram",
+    "Nagaland", "Odisha", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu",
+    "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal"
+  ];
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        {/* Header */}
-        <div className="text-center mb-8">
-          <div className="flex items-center justify-center space-x-2 mb-4">
-            <GraduationCap className="text-primary text-3xl" />
-            <span className="text-2xl font-bold text-primary">Navodaya Connection</span>
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 px-4">
+      <Card className="w-full max-w-md">
+        <CardHeader className="text-center">
+          <CardTitle className="text-2xl font-bold">
+            {isLogin ? "Sign In" : "Create Account"}
+          </CardTitle>
+          <CardDescription>
+            {isLogin 
+              ? "Sign in to your Navodaya Connection account" 
+              : "Join the Navodaya Connection community"
+            }
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Social Login Buttons */}
+          <div className="space-y-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              onClick={() => handleSocialLogin('google')}
+            >
+              <svg className="w-4 h-4 mr-2" viewBox="0 0 24 24">
+                <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                <path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                <path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                <path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+              </svg>
+              Continue with Google
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              onClick={() => handleSocialLogin('facebook')}
+            >
+              <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+              </svg>
+              Continue with Facebook
+            </Button>
           </div>
-          <p className="text-gray-600">
-            Connect with fellow alumni for support and guidance
-          </p>
-        </div>
 
-        {/* Development Login Step */}
-        {step === "dev-login" && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center space-x-2">
-                <UserPlus className="h-5 w-5" />
-                <span>Quick Development Login</span>
-              </CardTitle>
-              <p className="text-sm text-gray-600">
-                Skip phone verification for development testing
-              </p>
-            </CardHeader>
-            <CardContent>
-              <Form {...devLoginForm}>
-                <form onSubmit={devLoginForm.handleSubmit(handleDevLogin)} className="space-y-4">
-                  <FormField
-                    control={devLoginForm.control}
-                    name="phone"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Phone Number *</FormLabel>
-                        <FormControl>
-                          <Input
-                            placeholder="+919876543210"
-                            {...field}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
+          <div className="relative">
+            <Separator />
+            <div className="absolute inset-0 flex items-center justify-center">
+              <span className="bg-white dark:bg-gray-900 px-2 text-sm text-gray-500">
+                or
+              </span>
+            </div>
+          </div>
+
+          {/* Email Forms */}
+          {isLogin ? (
+            <form onSubmit={loginForm.handleSubmit(onLoginSubmit)} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  {...loginForm.register("email")}
+                  placeholder="Enter your email"
+                />
+                {loginForm.formState.errors.email && (
+                  <p className="text-sm text-red-500">
+                    {loginForm.formState.errors.email.message}
+                  </p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="password">Password</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  {...loginForm.register("password")}
+                  placeholder="Enter your password"
+                />
+                {loginForm.formState.errors.password && (
+                  <p className="text-sm text-red-500">
+                    {loginForm.formState.errors.password.message}
+                  </p>
+                )}
+              </div>
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={loginMutation.isPending}
+              >
+                {loginMutation.isPending ? "Signing in..." : "Sign In"}
+              </Button>
+            </form>
+          ) : (
+            <form onSubmit={signupForm.handleSubmit(onSignupSubmit)} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="name">Full Name</Label>
+                  <Input
+                    id="name"
+                    {...signupForm.register("name")}
+                    placeholder="Your full name"
                   />
-                  
-                  <FormField
-                    control={devLoginForm.control}
-                    name="name"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Full Name *</FormLabel>
-                        <FormControl>
-                          <Input
-                            placeholder="Enter your full name"
-                            {...field}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  {/* JNV Batch Year - Mandatory */}
-                  <FormField
-                    control={devLoginForm.control}
-                    name="batchYear"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>12th Passing Year *</FormLabel>
-                        <Select
-                          onValueChange={(value) => field.onChange(parseInt(value))}
-                          defaultValue={field.value?.toString()}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select your 12th passing year" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {batchYears.map((year) => (
-                              <SelectItem key={year} value={year.toString()}>
-                                {year}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <p className="text-sm text-muted-foreground">
-                          Enter the year you would have passed 12th, even if you left JNV before completing 12th
-                        </p>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  {/* JNV State - Mandatory */}
-                  <FormField
-                    control={devLoginForm.control}
-                    name="state"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>JNV State *</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select your JNV state" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {INDIAN_STATES.map((state) => (
-                              <SelectItem key={state} value={state}>
-                                {state}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  {/* JNV District - Mandatory */}
-                  <FormField
-                    control={devLoginForm.control}
-                    name="district"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>JNV District *</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value} disabled={!devLoginForm.watch("state")}>
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder={devLoginForm.watch("state") ? "Select your JNV district" : "Select state first"} />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {devLoginForm.watch("state") && INDIAN_DISTRICTS[devLoginForm.watch("state") as keyof typeof INDIAN_DISTRICTS]?.map((district: string) => (
-                              <SelectItem key={district} value={district}>
-                                {district}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  {/* Optional Fields Collapsible Section */}
-                  <Collapsible open={showOptionalFields} onOpenChange={setShowOptionalFields}>
-                    <CollapsibleTrigger asChild>
-                      <Button type="button" variant="outline" className="w-full">
-                        <ChevronDown className={`h-4 w-4 transition-transform ${showOptionalFields ? 'rotate-180' : ''}`} />
-                        {showOptionalFields ? 'Hide' : 'Show'} Optional Details
-                      </Button>
-                    </CollapsibleTrigger>
-                    <CollapsibleContent className="space-y-4 mt-4">
-                      {/* Email */}
-                      <FormField
-                        control={devLoginForm.control}
-                        name="email"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Email</FormLabel>
-                            <FormControl>
-                              <Input
-                                placeholder="your.email@example.com"
-                                type="email"
-                                {...field}
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      {/* Profession */}
-                      <FormField
-                        control={devLoginForm.control}
-                        name="profession"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Profession</FormLabel>
-                            <Select onValueChange={field.onChange} defaultValue={field.value}>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select profession" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {PROFESSION_CATEGORIES.map((profession) => (
-                                  <SelectItem key={profession} value={profession}>
-                                    {profession}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      {/* Pin Code */}
-                      <FormField
-                        control={devLoginForm.control}
-                        name="pinCode"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Pin Code</FormLabel>
-                            <FormControl>
-                              <Input
-                                placeholder="560001"
-                                {...field}
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      {/* Expert Toggle */}
-                      <FormField
-                        control={devLoginForm.control}
-                        name="isExpert"
-                        render={({ field }) => (
-                          <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-                            <FormControl>
-                              <Checkbox
-                                checked={field.value}
-                                onCheckedChange={field.onChange}
-                              />
-                            </FormControl>
-                            <div className="space-y-1 leading-none">
-                              <FormLabel>I want to help with my expertise</FormLabel>
-                              <p className="text-sm text-muted-foreground">
-                                I can help others with my knowledge and experience
-                              </p>
-                            </div>
-                          </FormItem>
-                        )}
-                      />
-
-                      {/* UPI ID - Only show when expert is checked */}
-                      {devLoginForm.watch("isExpert") && (
-                        <FormField
-                          control={devLoginForm.control}
-                          name="upiId"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>UPI ID</FormLabel>
-                              <FormControl>
-                                <Input
-                                  placeholder="yourname@paytm"
-                                  {...field}
-                                />
-                              </FormControl>
-                              <p className="text-sm text-muted-foreground">
-                                Some users may send you money as a token of thanks once you help
-                              </p>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      )}
-
-                      {/* Bio */}
-                      <FormField
-                        control={devLoginForm.control}
-                        name="bio"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Bio</FormLabel>
-                            <FormControl>
-                              <Textarea
-                                placeholder="Tell us about yourself..."
-                                {...field}
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </CollapsibleContent>
-                  </Collapsible>
-
-                  <Button type="submit" className="w-full">
-                    Login for Development
-                  </Button>
-                  {!isDevelopment && (
-                    <Button 
-                      type="button" 
-                      variant="outline" 
-                      className="w-full" 
-                      onClick={() => setStep("phone")}
-                    >
-                      Use Phone Verification Instead
-                    </Button>
+                  {signupForm.formState.errors.name && (
+                    <p className="text-sm text-red-500">
+                      {signupForm.formState.errors.name.message}
+                    </p>
                   )}
-                </form>
-              </Form>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Phone Number Step */}
-        {step === "phone" && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center space-x-2">
-                <Phone className="h-5 w-5" />
-                <span>Enter Phone Number</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Form {...phoneForm}>
-                <form onSubmit={phoneForm.handleSubmit(handleSendOtp)} className="space-y-4">
-                  <FormField
-                    control={phoneForm.control}
-                    name="phone"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Phone Number</FormLabel>
-                        <FormControl>
-                          <Input
-                            placeholder="+91 9876543210"
-                            {...field}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="batchYear">Batch Year</Label>
+                  <Input
+                    id="batchYear"
+                    type="number"
+                    {...signupForm.register("batchYear", { valueAsNumber: true })}
+                    placeholder="2020"
                   />
-                  <Button type="submit" className="w-full">
-                    Send OTP
-                  </Button>
-                </form>
-              </Form>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* OTP Verification Step */}
-        {step === "otp" && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Verify OTP</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Form {...otpForm}>
-                <form onSubmit={otpForm.handleSubmit(handleVerifyOtp)} className="space-y-4">
-                  <FormField
-                    control={otpForm.control}
-                    name="otp"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Enter 6-digit OTP</FormLabel>
-                        <FormControl>
-                          <InputOTP
-                            maxLength={6}
-                            value={field.value}
-                            onChange={field.onChange}
-                          >
-                            <InputOTPGroup>
-                              <InputOTPSlot index={0} />
-                              <InputOTPSlot index={1} />
-                              <InputOTPSlot index={2} />
-                              <InputOTPSlot index={3} />
-                              <InputOTPSlot index={4} />
-                              <InputOTPSlot index={5} />
-                            </InputOTPGroup>
-                          </InputOTP>
-                        </FormControl>
-                        {generatedOtp && (
-                          <p className="text-sm text-muted-foreground">
-                            Demo OTP: {generatedOtp}
-                          </p>
-                        )}
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <div className="flex space-x-2">
-                    <Button type="submit" className="flex-1">
-                      Verify OTP
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setStep("phone")}
-                    >
-                      Back
-                    </Button>
-                  </div>
-                </form>
-              </Form>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Registration Step */}
-        {step === "register" && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center space-x-2">
-                <UserPlus className="h-5 w-5" />
-                <span>Complete Registration</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4 max-h-[70vh] overflow-y-auto custom-scrollbar">
-              <Form {...registrationForm}>
-                <form onSubmit={registrationForm.handleSubmit(handleRegister)} className="space-y-4">
-                  <FormField
-                    control={registrationForm.control}
-                    name="name"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Full Name*</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Your full name" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={registrationForm.control}
-                    name="email"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Email</FormLabel>
-                        <FormControl>
-                          <Input placeholder="your.email@example.com" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={registrationForm.control}
-                    name="batchYear"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>12th Passing Year*</FormLabel>
-                        <Select onValueChange={(value) => field.onChange(parseInt(value))}>
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="12th Passing Year" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {batchYears.map((year) => (
-                              <SelectItem key={year} value={year.toString()}>
-                                {year}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <p className="text-sm text-muted-foreground">
-                          Select the year you would have passed 12th, even if you left JNV before completing 12th
-                        </p>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  {/* JNV Location */}
-                  <div className="space-y-4">
-                    <h3 className="text-lg font-medium">JNV Location</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <FormField
-                        control={registrationForm.control}
-                        name="state"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>JNV State*</FormLabel>
-                            <Select onValueChange={field.onChange} value={field.value}>
-                              <FormControl>
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Select your JNV state" />
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                {INDIAN_STATES.map((state) => (
-                                  <SelectItem key={state} value={state}>
-                                    {state}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      <FormField
-                        control={registrationForm.control}
-                        name="district"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>JNV District*</FormLabel>
-                            <Select onValueChange={field.onChange} value={field.value} disabled={!registrationForm.watch("state")}>
-                              <FormControl>
-                                <SelectTrigger>
-                                  <SelectValue placeholder={registrationForm.watch("state") ? "Select your JNV district" : "Select state first"} />
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                {registrationForm.watch("state") && INDIAN_DISTRICTS[registrationForm.watch("state") as keyof typeof INDIAN_DISTRICTS]?.map((district: string) => (
-                                  <SelectItem key={district} value={district}>
-                                    {district}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-                  </div>
-
-                  <FormField
-                    control={registrationForm.control}
-                    name="profession"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Profession*</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value}>
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select your profession" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {PROFESSION_CATEGORIES.map((option) => (
-                              <SelectItem key={option} value={option}>
-                                {option}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  {registrationForm.watch("profession") === "Other" && (
-                    <FormField
-                      control={registrationForm.control}
-                      name="professionOther"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Please specify your profession</FormLabel>
-                          <FormControl>
-                            <Input placeholder="Enter your profession details" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+                  {signupForm.formState.errors.batchYear && (
+                    <p className="text-sm text-red-500">
+                      {signupForm.formState.errors.batchYear.message}
+                    </p>
                   )}
-
-                  {/* Residential Address */}
-                  <div className="space-y-4">
-                    <h3 className="text-lg font-medium">Current Residential Address</h3>
-                    <FormField
-                      control={registrationForm.control}
-                      name="pinCode"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Pin Code</FormLabel>
-                          <FormControl>
-                            <Input placeholder="560001" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-
-                  <FormField
-                    control={registrationForm.control}
-                    name="gpsEnabled"
-                    render={({ field }) => (
-                      <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-                        <FormControl>
-                          <Checkbox
-                            checked={field.value || false}
-                            onCheckedChange={field.onChange}
-                          />
-                        </FormControl>
-                        <div className="space-y-1 leading-none">
-                          <FormLabel>
-                            Enable GPS Location
-                          </FormLabel>
-                          <p className="text-sm text-muted-foreground">
-                            We'll store your GPS location for better matching. We won't share it until you provide permission.
-                          </p>
-                        </div>
-                      </FormItem>
-                    )}
-                  />
-
-
-
-                  <FormField
-                    control={registrationForm.control}
-                    name="isExpert"
-                    render={({ field }) => (
-                      <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-                        <FormControl>
-                          <Checkbox
-                            checked={field.value || false}
-                            onCheckedChange={field.onChange}
-                          />
-                        </FormControl>
-                        <div className="space-y-1 leading-none">
-                          <FormLabel>
-                            I want to help with my expertise
-                          </FormLabel>
-                          <p className="text-sm text-muted-foreground">
-                            Check this if you'd like to provide guidance to fellow alumni
-                          </p>
-                        </div>
-                      </FormItem>
-                    )}
-                  />
-
-                  {registrationForm.watch("isExpert") && (
-                    <>
-                      <FormField
-                        control={registrationForm.control}
-                        name="helpAreas"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Which area could you provide help and support?</FormLabel>
-                            <div className="space-y-2">
-                              {HELP_AREAS_CATEGORIES.map((option) => (
-                                <div key={option} className="flex items-center space-x-2">
-                                  <Checkbox
-                                    id={option}
-                                    checked={field.value?.includes(option) || false}
-                                    onCheckedChange={(checked) => {
-                                      const currentValues = field.value || [];
-                                      if (checked) {
-                                        field.onChange([...currentValues, option]);
-                                      } else {
-                                        field.onChange(currentValues.filter(value => value !== option));
-                                      }
-                                    }}
-                                  />
-                                  <label htmlFor={option} className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                                    {option}
-                                  </label>
-                                </div>
-                              ))}
-                            </div>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      {registrationForm.watch("helpAreas")?.includes("Other") && (
-                        <FormField
-                          control={registrationForm.control}
-                          name="helpAreasOther"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Please specify other areas where you can help</FormLabel>
-                              <FormControl>
-                                <Input placeholder="Enter details about other areas where you can provide help" {...field} />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      )}
-
-                      <FormField
-                        control={registrationForm.control}
-                        name="dailyRequestLimit"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Daily Request Limit</FormLabel>
-                            <Select onValueChange={(value) => field.onChange(parseInt(value))}>
-                              <FormControl>
-                                <SelectTrigger>
-                                  <SelectValue />
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                {[1, 2, 3, 4, 5].map((limit) => (
-                                  <SelectItem key={limit} value={limit.toString()}>
-                                    {limit} request{limit > 1 ? "s" : ""} per day
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      <FormField
-                        control={registrationForm.control}
-                        name="phoneVisible"
-                        render={({ field }) => (
-                          <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-                            <FormControl>
-                              <Checkbox
-                                checked={field.value || false}
-                                onCheckedChange={field.onChange}
-                              />
-                            </FormControl>
-                            <div className="space-y-1 leading-none">
-                              <FormLabel>
-                                Make my phone number visible for direct contact
-                              </FormLabel>
-                              <p className="text-sm text-muted-foreground">
-                                This allows users to contact you directly via WhatsApp
-                              </p>
-                            </div>
-                          </FormItem>
-                        )}
-                      />
-
-                      <FormField
-                        control={registrationForm.control}
-                        name="upiId"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>UPI ID</FormLabel>
-                            <FormControl>
-                              <Input placeholder="yourname@paytm" {...field} />
-                            </FormControl>
-                            <p className="text-sm text-muted-foreground">
-                              Some users may send you money as a token of thanks once you help
-                            </p>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  {...signupForm.register("email")}
+                  placeholder="Enter your email"
+                />
+                {signupForm.formState.errors.email && (
+                  <p className="text-sm text-red-500">
+                    {signupForm.formState.errors.email.message}
+                  </p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="password">Password</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  {...signupForm.register("password")}
+                  placeholder="Create a password"
+                />
+                {signupForm.formState.errors.password && (
+                  <p className="text-sm text-red-500">
+                    {signupForm.formState.errors.password.message}
+                  </p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="profession">Current Profession</Label>
+                <Input
+                  id="profession"
+                  {...signupForm.register("profession")}
+                  placeholder="Your current profession"
+                />
+                {signupForm.formState.errors.profession && (
+                  <p className="text-sm text-red-500">
+                    {signupForm.formState.errors.profession.message}
+                  </p>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="state">JNV State</Label>
+                  <select
+                    id="state"
+                    {...signupForm.register("state")}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <option value="">Select state</option>
+                    {states.map((state) => (
+                      <option key={state} value={state}>
+                        {state}
+                      </option>
+                    ))}
+                  </select>
+                  {signupForm.formState.errors.state && (
+                    <p className="text-sm text-red-500">
+                      {signupForm.formState.errors.state.message}
+                    </p>
                   )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="district">JNV District</Label>
+                  <Input
+                    id="district"
+                    {...signupForm.register("district")}
+                    placeholder="District name"
+                  />
+                  {signupForm.formState.errors.district && (
+                    <p className="text-sm text-red-500">
+                      {signupForm.formState.errors.district.message}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={signupMutation.isPending}
+              >
+                {signupMutation.isPending ? "Creating account..." : "Create Account"}
+              </Button>
+            </form>
+          )}
 
-                  <div className="flex space-x-2 pt-4">
-                    <Button type="submit" className="flex-1">
-                      Complete Registration
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setStep("otp")}
-                    >
-                      Back
-                    </Button>
-                  </div>
-                </form>
-              </Form>
-            </CardContent>
-          </Card>
-        )}
-      </div>
+          <div className="text-center">
+            <button
+              type="button"
+              onClick={() => setIsLogin(!isLogin)}
+              className="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+            >
+              {isLogin
+                ? "Don't have an account? Sign up"
+                : "Already have an account? Sign in"
+              }
+            </button>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

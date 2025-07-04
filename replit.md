@@ -31,10 +31,13 @@ Navodaya Connection is a full-stack web application designed to connect Navodaya
 ## Key Components
 
 ### Authentication System
-- **OTP-based Authentication**: Phone number verification with 6-digit OTP
+- **Multi-Provider Authentication**: Email/password, Google OAuth, Facebook OAuth
+- **Email-based Signup**: Password-protected accounts with email verification
+- **Social Authentication**: Integrated Google and Facebook login with Passport.js
 - **Session Management**: Secure session cookies with HttpOnly and secure flags
-- **User Registration**: Multi-step process including expertise area selection
+- **User Registration**: Single-step process with required Navodaya alumni fields
 - **Role-based Access**: Expert and regular user differentiation
+- **Password Security**: bcrypt hashing for secure password storage
 
 ### Database Schema
 - **Users Table**: Stores user profiles, contact info, expertise areas, and expert status
@@ -118,6 +121,13 @@ Navodaya Connection is a full-stack web application designed to connect Navodaya
 Changelog:
 - June 30, 2025. Initial setup
 - June 30, 2025. Added development mode authentication with optional registration fields
+- July 4, 2025. **Major Update**: Migrated from phone-based OTP to comprehensive social authentication system
+  - Added email/password authentication with bcrypt password hashing
+  - Integrated Google OAuth and Facebook OAuth using Passport.js
+  - Created email verification system for account activation
+  - Updated database schema with social provider fields
+  - Built new authentication UI with social login buttons
+  - Maintained session compatibility with existing system
 
 ## User Preferences
 

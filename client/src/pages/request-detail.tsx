@@ -9,6 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import Navigation from "@/components/navigation";
 import ResponseForm from "@/components/response-form";
 import RatingStars from "@/components/rating-stars";
+import ResponseRating from "@/components/response-rating";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -22,7 +23,8 @@ import {
   Heart, 
   Gift,
   AlertTriangle,
-  User
+  User,
+  CheckCircle
 } from "lucide-react";
 import type { RequestWithUser, ResponseWithExpert, Review } from "@shared/schema";
 
@@ -55,6 +57,42 @@ export default function RequestDetail() {
       toast({
         title: "Response marked as helpful!",
         description: "Thank you for your feedback.",
+      });
+      queryClient.invalidateQueries({ queryKey: [`/api/responses/request/${requestId}`] });
+    },
+  });
+
+  const markBestResponseMutation = useMutation({
+    mutationFn: async (responseId: number) => {
+      const response = await apiRequest("POST", `/api/requests/${requestId}/best-response`, {
+        responseId: responseId
+      });
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "Best response marked!",
+        description: "Thank you for marking the best response. Your request has been resolved.",
+      });
+      queryClient.invalidateQueries({ queryKey: [`/api/requests/${requestId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/responses/request/${requestId}`] });
+    },
+  });
+
+  const createResponseReviewMutation = useMutation({
+    mutationFn: async (data: { responseId: number; rating: number; comment?: string }) => {
+      const response = await apiRequest("POST", "/api/response-reviews", {
+        responseId: data.responseId,
+        requestId: requestId,
+        rating: data.rating,
+        comment: data.comment
+      });
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "Response rated successfully!",
+        description: "Thank you for rating this response.",
       });
       queryClient.invalidateQueries({ queryKey: [`/api/responses/request/${requestId}`] });
     },
@@ -111,7 +149,8 @@ export default function RequestDetail() {
 
   const isUrgent = request.urgency === "urgent" || request.urgency === "critical";
   const isResolved = request.status === "resolved";
-  const canRespond = user && request.userId !== user.id && !isResolved;
+  const canRespond = user && !isResolved; // Allow both experts and request owners to respond
+  const isRequestOwner = user && request.userId === user.id;
 
   const handleWhatsAppContact = (expert: ResponseWithExpert["expert"]) => {
     const message = encodeURIComponent(
@@ -136,13 +175,25 @@ export default function RequestDetail() {
   };
 
   const submitReview = (expertId: number) => {
-    if (selectedRating > 0) {
-      createReviewMutation.mutate({
-        requestId: request.id,
-        expertId,
-        rating: selectedRating,
-      });
-    }
+    if (selectedRating === 0) return;
+    
+    createReviewMutation.mutate({
+      requestId: requestId,
+      expertId: expertId,
+      rating: selectedRating
+    });
+  };
+
+  const handleResponseRating = (responseId: number, rating: number, comment?: string) => {
+    createResponseReviewMutation.mutate({
+      responseId: responseId,
+      rating: rating,
+      comment: comment
+    });
+  };
+
+  const handleBestResponse = (responseId: number) => {
+    markBestResponseMutation.mutate(responseId);
   };
 
   return (
@@ -280,38 +331,18 @@ export default function RequestDetail() {
                           </Button>
                         </div>
 
-                        {/* Rating and Gratitude Section for Request Owner */}
-                        {user?.id === request.userId && (
-                          <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-                            <h6 className="font-semibold text-gray-900 mb-3">Rate this response</h6>
-                            <div className="flex items-center space-x-4 mb-4">
-                              <RatingStars
-                                rating={selectedRating}
-                                onRatingChange={setSelectedRating}
-                                size="lg"
-                              />
-                              <span className="text-sm text-gray-600">Rate this expert's response</span>
-                            </div>
-                            
-                            <div className="flex space-x-3">
-                              <Button
-                                onClick={() => submitReview(response.expertId)}
-                                disabled={selectedRating === 0}
-                                className="flex-1 bg-secondary hover:bg-secondary/90 text-secondary-foreground flex items-center justify-center space-x-2"
-                              >
-                                <Heart className="h-4 w-4" />
-                                <span>Send Thanks</span>
-                              </Button>
-                              <Button
-                                onClick={() => handleGratitudePayment(response.expert)}
-                                className="flex-1 bg-primary hover:bg-primary/90 flex items-center justify-center space-x-2"
-                              >
-                                <Gift className="h-4 w-4" />
-                                <span>Pay Gratitude</span>
-                              </Button>
-                            </div>
-                          </div>
-                        )}
+                        {/* Response Rating and Actions - Using the new component */}
+                        <ResponseRating
+                          responseId={response.id}
+                          expertName={response.expert.name}
+                          expertUpiId={response.expert.upiId || undefined}
+                          isRequestOwner={isRequestOwner}
+                          isResolved={Boolean(isResolved)}
+                          isBestResponse={request.bestResponseId === response.id}
+                          onRateResponse={handleResponseRating}
+                          onMarkBestResponse={handleBestResponse}
+                          onPayGratitude={() => handleGratitudePayment(response.expert)}
+                        />
                       </div>
                     </div>
                     
@@ -331,18 +362,20 @@ export default function RequestDetail() {
               <h3 className="text-lg font-semibold text-gray-900 mb-2">No responses yet</h3>
               <p className="text-gray-600">
                 This request is waiting for community responses. 
-                {canRespond && " You can be the first to help!"}
+                {canRespond && !isRequestOwner && " You can be the first to help!"}
+                {canRespond && isRequestOwner && " You can add additional details or comments below."}
               </p>
             </CardContent>
           </Card>
         )}
 
-        {/* Response Form for Experts */}
+        {/* Response Form for Experts and Request Owner */}
         {canRespond && (
           <Card>
             <CardContent className="p-6">
               <ResponseForm 
                 requestId={request.id}
+                isRequestOwner={isRequestOwner}
                 onSuccess={() => {
                   queryClient.invalidateQueries({ queryKey: ["/api/responses/request", requestId] });
                 }}

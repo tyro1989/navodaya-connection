@@ -1,7 +1,11 @@
 import { type Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertUserSchema, insertRequestSchema, insertResponseSchema, insertReviewSchema, insertOtpSchema } from "@shared/schema";
+import { smsService } from "./sms";
+import { 
+  insertUserSchema, insertRequestSchema, insertResponseSchema, insertReviewSchema, 
+  insertEmailVerificationSchema, insertPrivateMessageSchema, emailSignupSchema, emailLoginSchema
+} from "@shared/schema";
 import { z } from "zod";
 import { Router } from "express";
 import multer from "multer";
@@ -9,6 +13,9 @@ import path from "path";
 import { mkdir } from "fs/promises";
 import { existsSync } from "fs";
 import express from "express";
+import passport from "passport";
+import { configureAuth, isAuthenticated } from "./auth";
+import crypto from "crypto";
 
 const router = Router();
 
@@ -53,124 +60,155 @@ const authenticateUser = (req: Request, res: Response, next: any) => {
 };
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Configure authentication
+  configureAuth();
+  app.use(passport.initialize());
+  app.use(passport.session());
+
   // Serve static files for uploaded images
   app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
-  // Authentication routes
-  app.post("/api/auth/send-otp", async (req, res) => {
+  // Email Signup
+  app.post("/api/auth/signup", async (req: Request, res: Response) => {
     try {
-      const { phone } = req.body;
+      const userData = emailSignupSchema.parse(req.body);
       
-      if (!phone) {
-        return res.status(400).json({ message: "Phone number is required" });
-      }
-      
-      // For development mode, use mock OTP for any phone number
-      if (process.env.NODE_ENV === "development") {
-        await storage.createOtpVerification({
-          phone,
-          otp: "123456", // Mock OTP for development
-          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours for dev
-        });
-        
-        return res.json({ 
-          message: "OTP sent successfully",
-          otp: "123456" // Return mock OTP for development
-        });
-      }
-      
-      // Generate 6-digit OTP for regular flow
-      const otp = Math.floor(100000 + Math.random() * 900000).toString();
-      const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
-      
-      await storage.createOtpVerification({
-        phone,
-        otp,
-        expiresAt
-      });
-      
-      // For demo purposes, return the OTP in development
-      // In production, this would send SMS
-      res.json({ 
-        message: "OTP sent successfully",
-        ...(process.env.NODE_ENV === "development" && { otp })
-      });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to send OTP" });
-    }
-  });
-
-  app.post("/api/auth/verify-otp", async (req, res) => {
-    try {
-      const { phone, otp } = req.body;
-      
-      // Handle development mode mock OTP for any phone number
-      if (process.env.NODE_ENV === "development" && otp === "123456") {
-        // Check if user exists
-        const existingUser = await storage.getUserByPhone(phone);
-        if (existingUser) {
-          req.session.userId = existingUser.id;
-          return res.json({ user: existingUser, isNewUser: false });
-        }
-        return res.json({ message: "OTP verified", isNewUser: true });
-      }
-      
-      const isValid = await storage.verifyOtp(phone, otp);
-      if (!isValid) {
-        return res.status(400).json({ message: "Invalid or expired OTP" });
-      }
-      
-      // Check if user exists
-      const existingUser = await storage.getUserByPhone(phone);
+      // Check if user already exists
+      const existingUser = await storage.getUserByEmail(userData.email);
       if (existingUser) {
-        req.session.userId = existingUser.id;
-        return res.json({ user: existingUser, isNewUser: false });
+        return res.status(400).json({ message: "User already exists with this email" });
       }
       
-      res.json({ message: "OTP verified", isNewUser: true });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to verify OTP" });
-    }
-  });
-
-  app.post("/api/auth/register", async (req, res) => {
-    try {
-      const userData = insertUserSchema.parse(req.body);
-      const user = await storage.createUser(userData);
-      req.session.userId = user.id;
-      res.json({ user });
+      const user = await storage.createUserWithEmail(userData);
+      
+      // Generate email verification token
+      const token = crypto.randomBytes(32).toString('hex');
+      await storage.createEmailVerification({
+        email: user.email,
+        token,
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
+      });
+      
+      // In development, return the token for easy testing
+      if (process.env.NODE_ENV === 'development') {
+        res.json({ 
+          message: "User created successfully. Please verify your email.",
+          user: { id: user.id, email: user.email, name: user.name },
+          verificationToken: token // Only in development
+        });
+      } else {
+        // In production, send email with verification link
+        res.json({ message: "User created successfully. Please check your email for verification." });
+      }
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "Invalid user data", errors: error.errors });
+        return res.status(400).json({ message: error.errors[0].message });
       }
       res.status(500).json({ message: "Failed to create user" });
     }
   });
 
-  app.post("/api/auth/logout", (req, res) => {
-    req.session.destroy((err) => {
+  // Email Login
+  app.post("/api/auth/login", (req: Request, res: Response, next) => {
+    passport.authenticate('local', (err: any, user: any, info: any) => {
       if (err) {
-        return res.status(500).json({ message: "Failed to logout" });
+        return res.status(500).json({ message: "Authentication error" });
       }
-      res.json({ message: "Logged out successfully" });
-    });
+      if (!user) {
+        return res.status(401).json({ message: info?.message || "Invalid credentials" });
+      }
+      
+      req.logIn(user, (err) => {
+        if (err) {
+          return res.status(500).json({ message: "Login error" });
+        }
+        
+        // Store user ID in session for compatibility
+        (req.session as any).userId = user.id;
+        
+        res.json({ 
+          message: "Login successful",
+          user: { id: user.id, email: user.email, name: user.name }
+        });
+      });
+    })(req, res, next);
   });
 
-  app.get("/api/auth/me", async (req, res) => {
+  // Email Verification
+  app.post("/api/auth/verify-email", async (req: Request, res: Response) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ message: "Not authenticated" });
-      }
+      const { email, token } = req.body;
       
-      const user = await storage.getUserById(req.session.userId);
-      if (!user) {
-        return res.status(401).json({ message: "User not found" });
+      const isValid = await storage.verifyEmailToken(email, token);
+      if (isValid) {
+        res.json({ message: "Email verified successfully" });
+      } else {
+        res.status(400).json({ message: "Invalid or expired verification token" });
       }
-      
-      res.json({ user });
     } catch (error) {
-      res.status(500).json({ message: "Failed to get user" });
+      res.status(500).json({ message: "Verification failed" });
     }
+  });
+
+  // Google OAuth Routes
+  app.get("/api/auth/google", passport.authenticate('google', { scope: ['profile', 'email'] }));
+  
+  app.get("/api/auth/google/callback", 
+    passport.authenticate('google', { failureRedirect: '/auth?error=google_failed' }),
+    (req: Request, res: Response) => {
+      // Store user ID in session for compatibility
+      (req.session as any).userId = (req.user as any)?.id;
+      res.redirect('/');
+    }
+  );
+
+  // Facebook OAuth Routes
+  app.get("/api/auth/facebook", passport.authenticate('facebook', { scope: ['email'] }));
+  
+  app.get("/api/auth/facebook/callback",
+    passport.authenticate('facebook', { failureRedirect: '/auth?error=facebook_failed' }),
+    (req: Request, res: Response) => {
+      // Store user ID in session for compatibility
+      (req.session as any).userId = (req.user as any)?.id;
+      res.redirect('/');
+    }
+  );
+
+  // Get current user
+  app.get("/api/auth/me", async (req: Request, res: Response) => {
+    const userId = (req.session as any)?.userId;
+    if (!userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+    
+    try {
+      const user = await storage.getUserById(userId);
+      if (user) {
+        res.json({ user });
+      } else {
+        res.status(404).json({ message: "User not found" });
+      }
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch user" });
+    }
+  });
+
+  // Logout
+  app.post("/api/auth/logout", (req: Request, res: Response) => {
+    req.logout((err) => {
+      if (err) {
+        return res.status(500).json({ message: "Logout error" });
+      }
+      
+      // Clear session
+      (req.session as any).userId = null;
+      req.session.destroy((err) => {
+        if (err) {
+          return res.status(500).json({ message: "Session destruction error" });
+        }
+        res.json({ message: "Logout successful" });
+      });
+    });
   });
 
   // User routes
@@ -513,6 +551,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Profile image upload error:", error);
       res.status(500).json({ error: "Failed to upload profile image" });
+    }
+  });
+
+  // Mark best response
+  app.post("/api/requests/:id/best-response", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+      
+      const requestId = parseInt(req.params.id);
+      const { responseId } = req.body;
+      
+      // Check if user owns the request
+      const request = await storage.getRequestById(requestId);
+      if (!request || request.userId !== req.session.userId) {
+        return res.status(403).json({ message: "You can only mark best responses for your own requests" });
+      }
+      
+      // Mark the response as best and resolve the request
+      await storage.markBestResponse(requestId, responseId);
+      
+      res.json({ message: "Best response marked successfully" });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to mark best response" });
+    }
+  });
+
+  // Response review routes
+  app.post("/api/response-reviews", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+      
+      const reviewData = {
+        ...req.body,
+        userId: req.session.userId
+      };
+      
+      const review = await storage.createResponseReview(reviewData);
+      res.json({ review });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to create response review" });
+    }
+  });
+
+  app.get("/api/response-reviews/response/:responseId", async (req, res) => {
+    try {
+      const responseId = parseInt(req.params.responseId);
+      const reviews = await storage.getResponseReviewsByResponseId(responseId);
+      res.json({ reviews });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get response reviews" });
     }
   });
 

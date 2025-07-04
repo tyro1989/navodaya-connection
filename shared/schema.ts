@@ -5,9 +5,18 @@ import { z } from "zod";
 
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
-  phone: text("phone").notNull().unique(),
+  email: text("email").notNull().unique(),
   name: text("name").notNull(),
-  email: text("email"),
+  phone: text("phone"),
+  // Social authentication fields
+  googleId: text("google_id"),
+  facebookId: text("facebook_id"),
+  appleId: text("apple_id"),
+  authProvider: text("auth_provider").notNull(), // 'email', 'google', 'facebook', 'apple'
+  // Optional password field for email signups
+  password: text("password"), // Will be hashed
+  emailVerified: boolean("email_verified").default(false),
+  
   gender: text("gender"), // 'male', 'female', 'other', 'prefer-not-to-say'
   batchYear: integer("batch_year").notNull(),
   profession: text("profession").notNull(),
@@ -51,6 +60,7 @@ export const requests = pgTable("requests", {
   status: text("status").default("open"), // 'open', 'in_progress', 'resolved', 'closed'
   attachments: text("attachments").array(),
   resolved: boolean("resolved").default(false),
+  bestResponseId: integer("best_response_id"), // Reference to best response (no FK constraint to avoid circular dependency)
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -88,6 +98,16 @@ export const reviews = pgTable("reviews", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const responseReviews = pgTable("response_reviews", {
+  id: serial("id").primaryKey(),
+  responseId: integer("response_id").references(() => responses.id).notNull(),
+  requestId: integer("request_id").references(() => requests.id).notNull(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  rating: integer("rating").notNull(), // 1-5 stars
+  comment: text("comment"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 export const expertStats = pgTable("expert_stats", {
   id: serial("id").primaryKey(),
   expertId: integer("expert_id").references(() => users.id).notNull(),
@@ -99,10 +119,10 @@ export const expertStats = pgTable("expert_stats", {
   lastResetDate: timestamp("last_reset_date").defaultNow(),
 });
 
-export const otpVerifications = pgTable("otp_verifications", {
+export const emailVerifications = pgTable("email_verifications", {
   id: serial("id").primaryKey(),
-  phone: text("phone").notNull(),
-  otp: text("otp").notNull(),
+  email: text("email").notNull(),
+  token: text("token").notNull(),
   expiresAt: timestamp("expires_at").notNull(),
   verified: boolean("verified").default(false),
   createdAt: timestamp("created_at").defaultNow(),
@@ -141,10 +161,31 @@ export const insertReviewSchema = createInsertSchema(reviews).omit({
   createdAt: true,
 });
 
-export const insertOtpSchema = createInsertSchema(otpVerifications).omit({
+export const insertResponseReviewSchema = createInsertSchema(responseReviews).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertEmailVerificationSchema = createInsertSchema(emailVerifications).omit({
   id: true,
   createdAt: true,
   verified: true,
+});
+
+// Auth schemas
+export const emailSignupSchema = z.object({
+  email: z.string().email("Please enter a valid email address"),
+  password: z.string().min(8, "Password must be at least 8 characters"),
+  name: z.string().min(1, "Name is required"),
+  batchYear: z.number().min(1990).max(new Date().getFullYear()),
+  profession: z.string().min(1, "Profession is required"),
+  state: z.string().min(1, "State is required"),
+  district: z.string().min(1, "District is required"),
+});
+
+export const emailLoginSchema = z.object({
+  email: z.string().email("Please enter a valid email address"),
+  password: z.string().min(1, "Password is required"),
 });
 
 export const insertPrivateMessageSchema = createInsertSchema(privateMessages).omit({
@@ -168,10 +209,17 @@ export type InsertPrivateMessage = z.infer<typeof insertPrivateMessageSchema>;
 export type Review = typeof reviews.$inferSelect;
 export type InsertReview = z.infer<typeof insertReviewSchema>;
 
+export type ResponseReview = typeof responseReviews.$inferSelect;
+export type InsertResponseReview = z.infer<typeof insertResponseReviewSchema>;
+
 export type ExpertStats = typeof expertStats.$inferSelect;
 
-export type OtpVerification = typeof otpVerifications.$inferSelect;
-export type InsertOtp = z.infer<typeof insertOtpSchema>;
+export type EmailVerification = typeof emailVerifications.$inferSelect;
+export type InsertEmailVerification = z.infer<typeof insertEmailVerificationSchema>;
+
+// Auth types
+export type EmailSignup = z.infer<typeof emailSignupSchema>;
+export type EmailLogin = z.infer<typeof emailLoginSchema>;
 
 // Extended types for API responses
 export type RequestWithUser = Request & {
@@ -181,7 +229,9 @@ export type RequestWithUser = Request & {
 };
 
 export type ResponseWithExpert = Response & {
-  expert: Pick<User, 'id' | 'name' | 'profession' | 'batchYear' | 'profileImage'>;
+  expert: Pick<User, 'id' | 'name' | 'profession' | 'batchYear' | 'profileImage' | 'upiId'>;
+  rating?: number;
+  reviewCount?: number;
 };
 
 export type PrivateMessageWithUser = PrivateMessage & {
@@ -248,6 +298,21 @@ export const reviewsRelations = relations(reviews, ({ one }) => ({
   request: one(requests, {
     fields: [reviews.requestId],
     references: [requests.id],
+  }),
+}));
+
+export const responseReviewsRelations = relations(responseReviews, ({ one }) => ({
+  response: one(responses, {
+    fields: [responseReviews.responseId],
+    references: [responses.id],
+  }),
+  request: one(requests, {
+    fields: [responseReviews.requestId],
+    references: [requests.id],
+  }),
+  user: one(users, {
+    fields: [responseReviews.userId],
+    references: [users.id],
   }),
 }));
 

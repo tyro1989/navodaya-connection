@@ -17,9 +17,10 @@ type ResponseFormData = z.infer<typeof responseFormSchema>;
 interface ResponseFormProps {
   requestId: number;
   onSuccess?: () => void;
+  isRequestOwner?: boolean;
 }
 
-export default function ResponseForm({ requestId, onSuccess }: ResponseFormProps) {
+export default function ResponseForm({ requestId, onSuccess, isRequestOwner = false }: ResponseFormProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -39,8 +40,8 @@ export default function ResponseForm({ requestId, onSuccess }: ResponseFormProps
     },
     onSuccess: () => {
       toast({
-        title: "Response posted successfully!",
-        description: "Your response has been posted and the user will be notified.",
+        title: isRequestOwner ? "Comment posted successfully!" : "Response posted successfully!",
+        description: isRequestOwner ? "Your comment has been added to the request." : "Your response has been posted and the user will be notified.",
       });
       form.reset();
       queryClient.invalidateQueries({ queryKey: ["/api/responses/request", requestId] });
@@ -62,7 +63,9 @@ export default function ResponseForm({ requestId, onSuccess }: ResponseFormProps
 
   return (
     <div className="border-t border-gray-100 pt-6">
-      <h4 className="font-semibold text-gray-900 mb-4">Offer Your Support</h4>
+      <h4 className="font-semibold text-gray-900 mb-4">
+        {isRequestOwner ? "Add a Comment" : "Offer Your Support"}
+      </h4>
       
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
@@ -71,11 +74,15 @@ export default function ResponseForm({ requestId, onSuccess }: ResponseFormProps
             name="content"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Your Response*</FormLabel>
+                <FormLabel>{isRequestOwner ? "Your Comment*" : "Your Response*"}</FormLabel>
                 <FormControl>
                   <Textarea
                     rows={4}
-                    placeholder="Share your advice, experience, guidance, or offer any help you can provide..."
+                    placeholder={
+                      isRequestOwner 
+                        ? "Add additional information, updates, or thank the community for their responses..."
+                        : "Share your advice, experience, guidance, or offer any help you can provide..."
+                    }
                     className="resize-none"
                     {...field}
                   />
@@ -93,7 +100,12 @@ export default function ResponseForm({ requestId, onSuccess }: ResponseFormProps
             >
               <Send className="h-4 w-4" />
               <span>
-                {createResponseMutation.isPending ? "Posting..." : "Post Response"}
+                {createResponseMutation.isPending 
+                  ? "Posting..." 
+                  : isRequestOwner 
+                    ? "Post Comment" 
+                    : "Post Response"
+                }
               </span>
             </Button>
           </div>
