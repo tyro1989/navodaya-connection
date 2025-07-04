@@ -64,10 +64,18 @@ export default function AuthPage() {
   // Mutations
   const loginMutation = useMutation({
     mutationFn: async (data: PhoneLogin) => {
-      return await apiRequest("/api/auth/login", {
+      const response = await fetch("/api/auth/login", {
         method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify(data),
       });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Login failed");
+      }
+      return response.json();
     },
     onSuccess: () => {
       navigate("/");
@@ -79,10 +87,18 @@ export default function AuthPage() {
 
   const signupMutation = useMutation({
     mutationFn: async (data: PhoneSignup) => {
-      return await apiRequest("/api/auth/signup", {
+      const response = await fetch("/api/auth/signup", {
         method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify(data),
       });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Signup failed");
+      }
+      return response.json();
     },
     onSuccess: () => {
       navigate("/");
@@ -163,6 +179,7 @@ export default function AuthPage() {
             </form>
           ) : (
             <form onSubmit={signupForm.handleSubmit(onSignupSubmit)} className="space-y-4">
+              {/* Name and Phone Number in same row */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="name">Full Name *</Label>
@@ -178,36 +195,22 @@ export default function AuthPage() {
                   )}
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="batchYear">12th Passing Year *</Label>
+                  <Label htmlFor="phone">Phone Number *</Label>
                   <Input
-                    id="batchYear"
-                    type="number"
-                    {...signupForm.register("batchYear", { valueAsNumber: true })}
-                    placeholder="2020"
+                    id="phone"
+                    type="tel"
+                    {...signupForm.register("phone")}
+                    placeholder="+91 9876543210"
                   />
-                  {signupForm.formState.errors.batchYear && (
+                  {signupForm.formState.errors.phone && (
                     <p className="text-sm text-red-500">
-                      {signupForm.formState.errors.batchYear.message}
+                      {signupForm.formState.errors.phone.message}
                     </p>
                   )}
                 </div>
               </div>
               
-              <div className="space-y-2">
-                <Label htmlFor="phone">Phone Number *</Label>
-                <Input
-                  id="phone"
-                  type="tel"
-                  {...signupForm.register("phone")}
-                  placeholder="+91 9876543210"
-                />
-                {signupForm.formState.errors.phone && (
-                  <p className="text-sm text-red-500">
-                    {signupForm.formState.errors.phone.message}
-                  </p>
-                )}
-              </div>
-              
+              {/* Email in second row */}
               <div className="space-y-2">
                 <Label htmlFor="email">Email (Optional)</Label>
                 <Input
@@ -223,6 +226,7 @@ export default function AuthPage() {
                 )}
               </div>
               
+              {/* Password and Confirm Password */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="password">Password *</Label>
@@ -254,7 +258,8 @@ export default function AuthPage() {
                 </div>
               </div>
               
-              <div className="grid grid-cols-2 gap-4">
+              {/* JNV State, District, and 12th Passing Year */}
+              <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="state">JNV State *</Label>
                   <select
@@ -285,6 +290,26 @@ export default function AuthPage() {
                   {signupForm.formState.errors.district && (
                     <p className="text-sm text-red-500">
                       {signupForm.formState.errors.district.message}
+                    </p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="batchYear">12th Passing Year *</Label>
+                  <select
+                    id="batchYear"
+                    {...signupForm.register("batchYear", { valueAsNumber: true })}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <option value="">Select year</option>
+                    {Array.from({ length: 2032 - 1995 + 1 }, (_, i) => 2032 - i).map((year) => (
+                      <option key={year} value={year}>
+                        {year}
+                      </option>
+                    ))}
+                  </select>
+                  {signupForm.formState.errors.batchYear && (
+                    <p className="text-sm text-red-500">
+                      {signupForm.formState.errors.batchYear.message}
                     </p>
                   )}
                 </div>
