@@ -1,6 +1,5 @@
 import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
-import { Strategy as FacebookStrategy } from "passport-facebook";
 import { Strategy as LocalStrategy } from "passport-local";
 import { storage } from "./storage";
 import type { User } from "@shared/schema";
@@ -24,149 +23,79 @@ export function configureAuth() {
     }
   ));
 
-  // Google OAuth Strategy
+  // Google OAuth Strategy (only if credentials are provided)
   if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
     passport.use(new GoogleStrategy({
       clientID: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
       callbackURL: "/api/auth/google/callback"
     },
-    async (accessToken, refreshToken, profile, done) => {
-      try {
-        // Check if user already exists
-        let user = await storage.getUserBySocialId('google', profile.id);
-        
+  async (accessToken, refreshToken, profile, done) => {
+    try {
+      // Check if user already exists
+      let user = await storage.getUserBySocialId('google', profile.id);
+      
+      if (user) {
+        return done(null, user);
+      }
+
+      // Check if user exists with same email
+      if (profile.emails && profile.emails.length > 0) {
+        user = await storage.getUserByEmail(profile.emails[0].value);
         if (user) {
+          // Link Google account to existing user
+          await storage.updateUser(user.id, {
+            googleId: profile.id,
+            authProvider: 'google'
+          });
           return done(null, user);
         }
-
-        // Check if user exists with same email
-        if (profile.emails && profile.emails.length > 0) {
-          user = await storage.getUserByEmail(profile.emails[0].value);
-          if (user) {
-            // Link Google account to existing user
-            await storage.updateUser(user.id, {
-              googleId: profile.id,
-              authProvider: 'google'
-            });
-            return done(null, user);
-          }
-        }
-
-        // Create new user
-        const newUserData: Partial<User> = {
-          email: profile.emails?.[0]?.value || '',
-          name: profile.displayName || '',
-          googleId: profile.id,
-          authProvider: 'google',
-          profileImage: profile.photos?.[0]?.value || null,
-          // Set required fields with defaults
-          batchYear: new Date().getFullYear(),
-          profession: 'Not specified',
-          state: 'Not specified',
-          district: 'Not specified',
-          phone: null,
-          facebookId: null,
-          appleId: null,
-          password: null,
-          emailVerified: true,
-          gender: null,
-          professionOther: null,
-          currentState: null,
-          currentDistrict: null,
-          pinCode: null,
-          gpsLocation: null,
-          gpsEnabled: false,
-          helpAreas: [],
-          helpAreasOther: null,
-          expertiseAreas: [],
-          isExpert: false,
-          dailyRequestLimit: 3,
-          phoneVisible: false,
-          upiId: null,
-          bio: null,
-          isActive: true,
-          lastActive: new Date(),
-          createdAt: new Date()
-        };
-
-        user = await storage.createUserWithSocialAuth(newUserData);
-        return done(null, user);
-      } catch (error) {
-        return done(error);
       }
-    }));
-  }
 
-  // Facebook OAuth Strategy
-  if (process.env.FACEBOOK_APP_ID && process.env.FACEBOOK_APP_SECRET) {
-    passport.use(new FacebookStrategy({
-      clientID: process.env.FACEBOOK_APP_ID,
-      clientSecret: process.env.FACEBOOK_APP_SECRET,
-      callbackURL: "/api/auth/facebook/callback",
-      profileFields: ['id', 'displayName', 'email', 'photos']
-    },
-    async (accessToken, refreshToken, profile, done) => {
-      try {
-        // Similar logic to Google strategy
-        let user = await storage.getUserBySocialId('facebook', profile.id);
-        
-        if (user) {
-          return done(null, user);
-        }
+      // Create incomplete user profile for first-time Google users
+      // They will need to complete registration with required Navodaya fields
+      const newUserData: Partial<User> = {
+        email: profile.emails?.[0]?.value || '',
+        name: profile.displayName || '',
+        googleId: profile.id,
+        authProvider: 'google',
+        profileImage: profile.photos?.[0]?.value || null,
+        facebookId: null,
+        appleId: null,
+        password: null,
+        emailVerified: true,
+        // Mark as incomplete - requires additional info
+        batchYear: 0, // Will be updated on first login
+        profession: '',
+        state: '',
+        district: '',
+        phone: null,
+        gender: null,
+        professionOther: null,
+        currentState: null,
+        currentDistrict: null,
+        pinCode: null,
+        gpsLocation: null,
+        gpsEnabled: false,
+        helpAreas: [],
+        helpAreasOther: null,
+        expertiseAreas: [],
+        isExpert: false,
+        dailyRequestLimit: 3,
+        phoneVisible: false,
+        upiId: null,
+        bio: null,
+        isActive: true,
+        lastActive: new Date(),
+        createdAt: new Date()
+      };
 
-        if (profile.emails && profile.emails.length > 0) {
-          user = await storage.getUserByEmail(profile.emails[0].value);
-          if (user) {
-            await storage.updateUser(user.id, {
-              facebookId: profile.id,
-              authProvider: 'facebook'
-            });
-            return done(null, user);
-          }
-        }
-
-        const newUserData: Partial<User> = {
-          email: profile.emails?.[0]?.value || '',
-          name: profile.displayName || '',
-          facebookId: profile.id,
-          authProvider: 'facebook',
-          profileImage: profile.photos?.[0]?.value || null,
-          batchYear: new Date().getFullYear(),
-          profession: 'Not specified',
-          state: 'Not specified',
-          district: 'Not specified',
-          phone: null,
-          googleId: null,
-          appleId: null,
-          password: null,
-          emailVerified: true,
-          gender: null,
-          professionOther: null,
-          currentState: null,
-          currentDistrict: null,
-          pinCode: null,
-          gpsLocation: null,
-          gpsEnabled: false,
-          helpAreas: [],
-          helpAreasOther: null,
-          expertiseAreas: [],
-          isExpert: false,
-          dailyRequestLimit: 3,
-          phoneVisible: false,
-          upiId: null,
-          bio: null,
-          isActive: true,
-          lastActive: new Date(),
-          createdAt: new Date()
-        };
-
-        user = await storage.createUserWithSocialAuth(newUserData);
-        return done(null, user);
-      } catch (error) {
-        return done(error);
-      }
-    }));
+      user = await storage.createUserWithSocialAuth(newUserData);
+      return done(null, user);
+    } catch (error) {
+      return done(error);
+    }
+  }));
   }
 
   // Serialize user for session

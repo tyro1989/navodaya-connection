@@ -158,19 +158,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     (req: Request, res: Response) => {
       // Store user ID in session for compatibility
       (req.session as any).userId = (req.user as any)?.id;
-      res.redirect('/');
-    }
-  );
-
-  // Facebook OAuth Routes
-  app.get("/api/auth/facebook", passport.authenticate('facebook', { scope: ['email'] }));
-  
-  app.get("/api/auth/facebook/callback",
-    passport.authenticate('facebook', { failureRedirect: '/auth?error=facebook_failed' }),
-    (req: Request, res: Response) => {
-      // Store user ID in session for compatibility
-      (req.session as any).userId = (req.user as any)?.id;
-      res.redirect('/');
+      
+      // Check if user needs to complete registration
+      const user = req.user as any;
+      if (user && user.batchYear === 0) {
+        res.redirect('/auth?complete_registration=true');
+      } else {
+        res.redirect('/');
+      }
     }
   );
 
@@ -190,6 +185,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch user" });
+    }
+  });
+
+  // Complete registration for social auth users
+  app.post("/api/auth/complete-registration", async (req: Request, res: Response) => {
+    const userId = (req.session as any)?.userId;
+    if (!userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+    
+    try {
+      const { batchYear, profession, state, district } = req.body;
+      
+      if (!batchYear || !profession || !state || !district) {
+        return res.status(400).json({ message: "All fields are required" });
+      }
+      
+      const updatedUser = await storage.updateUser(userId, {
+        batchYear: parseInt(batchYear),
+        profession,
+        state,
+        district
+      });
+      
+      res.json({ message: "Registration completed successfully", user: updatedUser });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to complete registration" });
     }
   });
 
