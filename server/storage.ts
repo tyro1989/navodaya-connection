@@ -28,10 +28,8 @@ export interface IStorage {
   getExpertsByExpertise(expertise: string): Promise<ExpertWithStats[]>;
 
   // Authentication management
-  createUserWithEmail(userData: EmailSignup): Promise<User>;
-  verifyUserPassword(email: string, password: string): Promise<User | null>;
-  createUserWithSocialAuth(userData: Partial<User>): Promise<User>;
-  getUserBySocialId(provider: string, socialId: string): Promise<User | undefined>;
+  createUserWithPhone(userData: any): Promise<User>;
+  verifyUserPassword(phone: string, password: string): Promise<User | null>;
 
   // Email verification management
   createEmailVerification(verification: InsertEmailVerification): Promise<EmailVerification>;
@@ -556,54 +554,54 @@ export class DatabaseStorage implements IStorage {
     }));
   }
 
-  async createUserWithEmail(userData: EmailSignup): Promise<User> {
+  async createUserWithPhone(userData: any): Promise<User> {
     const hashedPassword = await bcrypt.hash(userData.password, 10);
     
     const [user] = await db
       .insert(users)
       .values({
-        email: userData.email,
+        phone: userData.phone,
+        email: userData.email || null,
         name: userData.name,
         password: hashedPassword,
-        authProvider: 'email',
+        authProvider: userData.authProvider,
         batchYear: userData.batchYear,
         profession: userData.profession,
         state: userData.state,
         district: userData.district,
-        createdAt: new Date(),
-        lastActive: new Date(),
-        emailVerified: false,
-        isExpert: false,
-        isActive: true,
-        phoneVisible: false,
-        gpsEnabled: false,
-        dailyRequestLimit: 3,
-        phone: null,
+        createdAt: userData.createdAt,
+        lastActive: userData.lastActive,
+        emailVerified: userData.emailVerified,
+        isExpert: userData.isExpert,
+        isActive: userData.isActive,
+        phoneVisible: userData.phoneVisible,
+        gpsEnabled: userData.gpsEnabled,
+        dailyRequestLimit: userData.dailyRequestLimit,
         googleId: null,
         facebookId: null,
         appleId: null,
-        gender: null,
-        professionOther: null,
-        currentState: null,
-        currentDistrict: null,
-        pinCode: null,
-        gpsLocation: null,
-        helpAreas: [],
-        helpAreasOther: null,
-        expertiseAreas: [],
-        upiId: null,
-        bio: null,
+        gender: userData.gender,
+        professionOther: userData.professionOther,
+        currentState: userData.currentState,
+        currentDistrict: userData.currentDistrict,
+        pinCode: userData.pinCode,
+        gpsLocation: userData.gpsLocation,
+        helpAreas: userData.helpAreas,
+        helpAreasOther: userData.helpAreasOther,
+        expertiseAreas: userData.expertiseAreas,
+        upiId: userData.upiId,
+        bio: userData.bio,
         profileImage: null
       })
       .returning();
     return user;
   }
 
-  async verifyUserPassword(email: string, password: string): Promise<User | null> {
+  async verifyUserPassword(phone: string, password: string): Promise<User | null> {
     const [user] = await db
       .select()
       .from(users)
-      .where(eq(users.email, email));
+      .where(eq(users.phone, phone));
     
     if (!user || !user.password) return null;
     

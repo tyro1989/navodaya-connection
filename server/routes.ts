@@ -68,70 +68,81 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Serve static files for uploaded images
   app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
-  // Email Signup
+
+
+  // Phone-based Signup
   app.post("/api/auth/signup", async (req: Request, res: Response) => {
     try {
-      const userData = emailSignupSchema.parse(req.body);
+      const { phone, email, password, confirmPassword, name, state, district, batchYear } = req.body;
+      
+      // Validate required fields
+      if (!phone || !password || !confirmPassword || !name || !state || !district || !batchYear) {
+        return res.status(400).json({ message: "Phone, password, name, state, district, and batch year are required" });
+      }
+      
+      // Check password confirmation
+      if (password !== confirmPassword) {
+        return res.status(400).json({ message: "Passwords do not match" });
+      }
       
       // Check if user already exists
-      const existingUser = await storage.getUserByEmail(userData.email);
+      const existingUser = await storage.getUserByPhone(phone);
       if (existingUser) {
-        return res.status(400).json({ message: "User already exists with this email" });
+        return res.status(400).json({ message: "User with this phone number already exists" });
       }
       
-      const user = await storage.createUserWithEmail(userData);
+      // Create new user
+      const userData = {
+        phone: phone,
+        email: email || null,
+        password: password,
+        name: name,
+        state: state,
+        district: district,
+        batchYear: parseInt(batchYear),
+        authProvider: 'local',
+        emailVerified: false,
+        profession: '',
+        gender: null,
+        professionOther: null,
+        currentState: null,
+        currentDistrict: null,
+        pinCode: null,
+        gpsLocation: null,
+        gpsEnabled: false,
+        helpAreas: [],
+        helpAreasOther: null,
+        expertiseAreas: [],
+        isExpert: false,
+        dailyRequestLimit: 3,
+        phoneVisible: false,
+        upiId: null,
+        bio: null,
+        isActive: true,
+        lastActive: new Date(),
+        createdAt: new Date()
+      };
       
-      // Generate email verification token
-      const token = crypto.randomBytes(32).toString('hex');
-      await storage.createEmailVerification({
-        email: user.email,
-        token,
-        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
-      });
+      const user = await storage.createUserWithPhone(userData);
       
-      // In development, return the token for easy testing
-      if (process.env.NODE_ENV === 'development') {
-        res.json({ 
-          message: "User created successfully. Please verify your email.",
-          user: { id: user.id, email: user.email, name: user.name },
-          verificationToken: token // Only in development
-        });
-      } else {
-        // In production, send email with verification link
-        res.json({ message: "User created successfully. Please check your email for verification." });
-      }
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: error.errors[0].message });
-      }
-      res.status(500).json({ message: "Failed to create user" });
-    }
-  });
-
-  // Email Login
-  app.post("/api/auth/login", (req: Request, res: Response, next) => {
-    passport.authenticate('local', (err: any, user: any, info: any) => {
-      if (err) {
-        return res.status(500).json({ message: "Authentication error" });
-      }
-      if (!user) {
-        return res.status(401).json({ message: info?.message || "Invalid credentials" });
-      }
-      
+      // Log the user in immediately after signup
       req.logIn(user, (err) => {
         if (err) {
-          return res.status(500).json({ message: "Login error" });
+          return res.status(500).json({ message: "Signup successful but login failed" });
         }
         
         // Store user ID in session for compatibility
         (req.session as any).userId = user.id;
         
         res.json({ 
-          message: "Login successful",
-          user: { id: user.id, email: user.email, name: user.name }
+          message: "Signup successful",
+          user: { id: user.id, phone: user.phone, name: user.name }
         });
       });
-    })(req, res, next);
+    } catch (error) {
+      console.error('Signup error:', error);
+      res.status(500).json({ message: "Failed to create user" });
+    }
   });
 
   // Email Verification
@@ -150,24 +161,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Google OAuth Routes
-  app.get("/api/auth/google", passport.authenticate('google', { scope: ['profile', 'email'] }));
-  
-  app.get("/api/auth/google/callback", 
-    passport.authenticate('google', { failureRedirect: '/auth?error=google_failed' }),
-    (req: Request, res: Response) => {
-      // Store user ID in session for compatibility
-      (req.session as any).userId = (req.user as any)?.id;
-      
-      // Check if user needs to complete registration
-      const user = req.user as any;
-      if (user && user.batchYear === 0) {
-        res.redirect('/auth?complete_registration=true');
-      } else {
-        res.redirect('/');
+  // Phone-based Login (for existing users)
+  app.post("/api/auth/login", (req: Request, res: Response, next) => {
+    passport.authenticate('local', (err: any, user: any, info: any) => {
+      if (err) {
+        return res.status(500).json({ message: "Authentication error" });
       }
-    }
-  );
+      if (!user) {
+        return res.status(401).json({ message: info?.message || "Invalid phone or password" });
+      }
+      
+      req.logIn(user, (err) => {
+        if (err) {
+          return res.status(500).json({ message: "Login error" });
+        }
+        
+        // Store user ID in session for compatibility
+        (req.session as any).userId = user.id;
+        
+        res.json({ 
+          message: "Login successful",
+          user: { id: user.id, phone: user.phone, name: user.name }
+        });
+      });
+    })(req, res, next);
+  });
 
   // Get current user
   app.get("/api/auth/me", async (req: Request, res: Response) => {
