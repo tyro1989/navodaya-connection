@@ -24,7 +24,7 @@ export default function ExpertRequests() {
     queryKey: ["/api/requests"],
     queryFn: async () => {
       const response = await apiRequest("GET", "/api/requests");
-      return response.json() as Promise<{ requests: RequestWithUser[] }>;
+      return response as { requests: RequestWithUser[] };
     },
   });
 

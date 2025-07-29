@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -8,14 +9,72 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/lib/auth";
-import { GraduationCap, Bell, Search, MessageCircle, Home, BarChart3, Users, Menu, X } from "lucide-react";
+import { GraduationCap, Bell, Search, MessageCircle, Home, BarChart3, Users, Menu, X, Check, CheckCheck } from "lucide-react";
+import type { NotificationWithUser } from "@shared/schema";
 
 export default function Navigation() {
   const { user, logout } = useAuth();
   const [location] = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const queryClient = useQueryClient();
+
+  // Fetch notification count
+  const { data: notificationCount } = useQuery({
+    queryKey: ["/api/notifications/count"],
+    enabled: !!user,
+    refetchInterval: 30000, // Refetch every 30 seconds
+  });
+
+  // Fetch notifications for dropdown
+  const { data: notificationsData } = useQuery({
+    queryKey: ["/api/notifications"],
+    enabled: !!user,
+    refetchInterval: 30000,
+  });
+
+  const notifications: NotificationWithUser[] = notificationsData?.notifications || [];
+  const unreadCount = notificationCount?.count || 0;
+
+  // Handle notification actions
+  const handleNotificationClick = async (notification: NotificationWithUser) => {
+    // Mark as read if unread
+    if (!notification.isRead) {
+      try {
+        await fetch(`/api/notifications/${notification.id}/read`, {
+          method: 'PUT',
+        });
+        // Invalidate queries to update counts
+        queryClient.invalidateQueries({ queryKey: ["/api/notifications/count"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+      } catch (error) {
+        console.error('Failed to mark notification as read:', error);
+      }
+    }
+
+    // Navigate based on notification type
+    if (notification.entityType === 'request' && notification.entityId) {
+      setLocation(`/request/${notification.entityId}`);
+    } else if (notification.entityType === 'response' && notification.entityId) {
+      // Find the request for this response and navigate there
+      setLocation(`/request/${notification.entityId}`);
+    }
+  };
+
+  const handleMarkAllRead = async () => {
+    try {
+      await fetch('/api/notifications/mark-all-read', {
+        method: 'PUT',
+      });
+      // Invalidate queries to update counts
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications/count"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+    } catch (error) {
+      console.error('Failed to mark all notifications as read:', error);
+    }
+  };
 
   if (!user) return null;
 
@@ -61,12 +120,86 @@ export default function Navigation() {
           {/* User Menu */}
           <div className="flex items-center space-x-4">
             {/* Notifications */}
-            <Button variant="ghost" size="icon" className="relative">
-              <Bell className="h-5 w-5" />
-              <Badge className="absolute -top-1 -right-1 h-5 w-5 flex items-center justify-center p-0 text-xs bg-accent">
-                3
-              </Badge>
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="relative">
+                  <Bell className="h-5 w-5" />
+                  {unreadCount > 0 && (
+                    <Badge className="absolute -top-1 -right-1 h-5 w-5 flex items-center justify-center p-0 text-xs bg-red-500">
+                      {unreadCount > 99 ? '99+' : unreadCount}
+                    </Badge>
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-80 max-h-96 overflow-y-auto">
+                <div className="flex items-center justify-between p-2 border-b">
+                  <span className="font-semibold text-sm">Notifications</span>
+                  {unreadCount > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleMarkAllRead}
+                      className="text-xs h-6 px-2"
+                    >
+                      <CheckCheck className="h-3 w-3 mr-1" />
+                      Mark all read
+                    </Button>
+                  )}
+                </div>
+                {notifications.length > 0 ? (
+                  notifications.slice(0, 10).map((notification) => (
+                    <DropdownMenuItem
+                      key={notification.id}
+                      className={`p-3 cursor-pointer hover:bg-gray-50 ${!notification.isRead ? 'bg-blue-50' : ''}`}
+                      onClick={() => handleNotificationClick(notification)}
+                    >
+                      <div className="flex items-start space-x-3 w-full">
+                        <div className="flex-shrink-0">
+                          {notification.actionUser?.profileImage ? (
+                            <img 
+                              src={notification.actionUser.profileImage} 
+                              alt={notification.actionUser.name}
+                              className="w-8 h-8 rounded-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-xs font-semibold">
+                              {notification.actionUser?.name?.charAt(0) || '?'}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate">
+                            {notification.title}
+                          </p>
+                          <p className="text-xs text-gray-600 line-clamp-2">
+                            {notification.message}
+                          </p>
+                          <p className="text-xs text-gray-400 mt-1">
+                            {new Date(notification.createdAt!).toLocaleDateString()}
+                          </p>
+                        </div>
+                        {!notification.isRead && (
+                          <div className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0 mt-2"></div>
+                        )}
+                      </div>
+                    </DropdownMenuItem>
+                  ))
+                ) : (
+                  <div className="p-6 text-center text-gray-500">
+                    <Bell className="h-8 w-8 mx-auto mb-2 text-gray-300" />
+                    <p className="text-sm">No notifications yet</p>
+                    <p className="text-xs">We'll notify you when there's activity</p>
+                  </div>
+                )}
+                {notifications.length > 10 && (
+                  <div className="p-2 border-t">
+                    <Button variant="ghost" size="sm" className="w-full text-xs">
+                      View all notifications
+                    </Button>
+                  </div>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
 
             {/* User Dropdown */}
             <DropdownMenu>

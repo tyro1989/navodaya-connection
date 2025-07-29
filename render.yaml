@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: navodaya-connect
+    env: node
+    plan: starter
+    buildCommand: npm install && npm run build:full
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: SMS_PROVIDER
+        value: mock
+    disk:
+      name: navodaya-uploads
+      mountPath: /app/uploads
+      sizeGB: 1
+
+databases:
+  - name: navodaya-postgres
+    databaseName: navodaya_connect
+    user: navodaya_user
+    plan: starter

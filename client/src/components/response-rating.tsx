@@ -15,6 +15,8 @@ interface ResponseRatingProps {
   onRateResponse: (responseId: number, rating: number, comment?: string) => void;
   onMarkBestResponse: (responseId: number) => void;
   onPayGratitude: () => void;
+  isMarkingBest?: boolean;
+  isRatingLoading?: boolean;
 }
 
 export default function ResponseRating({
@@ -27,6 +29,8 @@ export default function ResponseRating({
   onRateResponse,
   onMarkBestResponse,
   onPayGratitude,
+  isMarkingBest = false,
+  isRatingLoading = false,
 }: ResponseRatingProps) {
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState("");
@@ -93,10 +97,20 @@ export default function ResponseRating({
                 <Button
                   onClick={() => onMarkBestResponse(responseId)}
                   size="sm"
-                  className="bg-green-600 hover:bg-green-700 text-white"
+                  disabled={isMarkingBest}
+                  className="bg-green-600 hover:bg-green-700 text-white relative"
                 >
-                  <CheckCircle className="h-4 w-4 mr-2" />
-                  Mark as Best Response
+                  {isMarkingBest ? (
+                    <>
+                      <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full mr-2"></div>
+                      <span>Marking...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="h-4 w-4 mr-2" />
+                      <span>Mark as Best Response</span>
+                    </>
+                  )}
                 </Button>
               )}
             </div>
@@ -118,14 +132,25 @@ export default function ResponseRating({
               <div className="flex space-x-3">
                 <Button
                   onClick={handleSubmitRating}
+                  disabled={isRatingLoading}
                   className="flex-1 bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center space-x-2"
                 >
-                  <Send className="h-4 w-4" />
-                  <span>Submit Rating</span>
+                  {isRatingLoading ? (
+                    <>
+                      <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
+                      <span>Submitting...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Send className="h-4 w-4" />
+                      <span>Submit Rating</span>
+                    </>
+                  )}
                 </Button>
                 <Button
                   onClick={() => setShowCommentBox(true)}
                   variant="outline"
+                  disabled={isRatingLoading}
                   className="flex items-center space-x-2"
                 >
                   <MessageCircle className="h-4 w-4" />
@@ -147,15 +172,25 @@ export default function ResponseRating({
                 <div className="flex space-x-2">
                   <Button
                     onClick={handleSubmitComment}
-                    disabled={rating === 0}
+                    disabled={rating === 0 || isRatingLoading}
                     className="bg-blue-600 hover:bg-blue-700 text-white flex items-center space-x-2"
                   >
-                    <Send className="h-4 w-4" />
-                    <span>Submit Rating & Comment</span>
+                    {isRatingLoading ? (
+                      <>
+                        <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
+                        <span>Submitting...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Send className="h-4 w-4" />
+                        <span>Submit Rating & Comment</span>
+                      </>
+                    )}
                   </Button>
                   <Button
                     onClick={() => setShowCommentBox(false)}
                     variant="outline"
+                    disabled={isRatingLoading}
                   >
                     Cancel
                   </Button>

@@ -11,6 +11,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
+import { SuccessAnimation } from "@/components/ui/success-animation";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { insertRequestSchema } from "@shared/schema";
@@ -26,6 +27,7 @@ export default function RequestForm() {
   const [charCount, setCharCount] = useState(0);
   const [gettingLocation, setGettingLocation] = useState(false);
   const [attachments, setAttachments] = useState<File[]>([]);
+  const [showSuccess, setShowSuccess] = useState(false);
 
   const form = useForm<RequestFormData>({
     resolver: zodResolver(insertRequestSchema),
@@ -48,21 +50,35 @@ export default function RequestForm() {
     mutationFn: async (data: RequestFormData) => {
       console.log("Submitting request data:", data);
       const response = await apiRequest("POST", "/api/requests", data);
-      return response.json();
+      return response;
     },
     onSuccess: () => {
-      toast({
-        title: "Request posted successfully! 🎉",
-        description: "Your request has been shared with the community. Experts will be notified and can respond to help you. You'll receive notifications when someone responds.",
-        duration: 6000, // Show for 6 seconds
-      });
+      // Show success animation first
+      setShowSuccess(true);
+      
+      // Clear form with visual feedback
       form.reset();
       setCharCount(0);
       setAttachments([]);
+      
+      // Refresh the requests data
       queryClient.invalidateQueries({ 
         predicate: (query) => 
           typeof query.queryKey[0] === 'string' && query.queryKey[0].includes('/api/requests')
       });
+      
+      // Show toast after animation and scroll to top
+      setTimeout(() => {
+        toast({
+          title: "🎉 Request Posted Successfully!",
+          description: "Your request is now live! Experts in the community will be notified and can respond to help you. You'll receive notifications when someone responds.",
+          duration: 6000,
+          className: "border-green-200 bg-green-50 text-green-800",
+        });
+        
+        // Scroll to top to show the new request
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }, 800);
     },
     onError: (error: any) => {
       console.error("Request submission error:", error);
@@ -74,16 +90,40 @@ export default function RequestForm() {
     },
   });
 
-  const onSubmit = (data: RequestFormData) => {
+  const onSubmit = async (data: RequestFormData) => {
     console.log("Form submitted with data:", data);
     console.log("Form validation errors:", form.formState.errors);
     console.log("Form is valid:", form.formState.isValid);
     
-    // Convert file names to attachments array for now
-    const attachmentNames = attachments.map(file => file.name);
+    // Upload files to server first
+    const uploadedAttachments: string[] = [];
+    
+    for (const file of attachments) {
+      try {
+        const formData = new FormData();
+        formData.append('attachment', file);
+        
+        const response = await fetch('/api/upload/request-attachment', {
+          method: 'POST',
+          body: formData,
+          credentials: 'include',
+        });
+        
+        if (response.ok) {
+          const result = await response.json();
+          uploadedAttachments.push(result.url);
+        } else {
+          console.error('Failed to upload attachment:', file.name);
+          // Continue with other files even if one fails
+        }
+      } catch (error) {
+        console.error('Error uploading attachment:', error);
+      }
+    }
+    
     const dataWithAttachments = {
       ...data,
-      attachments: attachmentNames,
+      attachments: uploadedAttachments,
     };
     
     createRequestMutation.mutate(dataWithAttachments);
@@ -160,15 +200,33 @@ export default function RequestForm() {
   const isLocationNotApplicable = form.watch("helpLocationNotApplicable");
 
   return (
-    <Card className="shadow-sm border border-gray-100">
-      <CardContent className="p-4">
-        <h2 className="text-lg font-semibold text-gray-900 mb-3 flex items-center space-x-2">
-          <Edit className="text-primary h-5 w-5" />
-          <span>Post Your Request</span>
-        </h2>
+    <>
+      <SuccessAnimation 
+        show={showSuccess} 
+        message="Request Posted Successfully!" 
+        onComplete={() => setShowSuccess(false)}
+        duration={2500}
+      />
+      
+      <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm rounded-2xl overflow-hidden">
+        <div className="bg-gradient-to-r from-blue-50/80 to-indigo-50/80 p-1">
+          <CardContent className="p-8 bg-white/90 backdrop-blur-sm rounded-2xl">
+            <div className="text-center mb-8">
+              <div className="inline-flex items-center gap-3 mb-4">
+                <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg">
+                  <Edit className="h-6 w-6 text-white" />
+                </div>
+                <h2 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+                  Post Your Request
+                </h2>
+              </div>
+              <p className="text-gray-600 max-w-lg mx-auto leading-relaxed">
+                Share your challenge with the Navodaya community and get expert help
+              </p>
+            </div>
 
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3">
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
             <FormField
               control={form.control}
               name="title"
@@ -467,72 +525,48 @@ export default function RequestForm() {
               </div>
             </div>
 
-            <div className="flex space-x-4 pt-4">
-              <Button
-                type="submit"
-                className="flex-1"
-                disabled={createRequestMutation.isPending}
-                onClick={(e) => {
-                  console.log("Submit button clicked!");
-                  console.log("Form errors:", form.formState.errors);
-                  console.log("Form values:", form.getValues());
-                  console.log("Form is valid:", form.formState.isValid);
+                <div className="flex flex-col sm:flex-row gap-4 pt-8">
+                  <Button
+                    type="submit"
+                    className="flex-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 h-12"
+                    disabled={createRequestMutation.isPending}
+                  >
+                    {createRequestMutation.isPending ? (
+                      <div className="flex items-center space-x-2">
+                        <div className="animate-spin h-4 w-4 border-2 border-white/30 border-t-white rounded-full"></div>
+                        <span>Posting Request...</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center space-x-2">
+                        <NotebookPen className="h-4 w-4" />
+                        <span>Post Request</span>
+                      </div>
+                    )}
+                  </Button>
                   
-                  // Manually trigger validation
-                  form.trigger().then((isValid) => {
-                    console.log("Manual validation result:", isValid);
-                    if (!isValid) {
-                      console.log("Validation failed, errors:", form.formState.errors);
-                    }
-                  });
-                }}
-              >
-                <NotebookPen className="h-4 w-4 mr-2" />
-                {createRequestMutation.isPending ? "Posting..." : "Post Request"}
-              </Button>
-              
-              {/* Debug button to test API directly */}
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => {
-                  const testData = {
-                    title: "Test Request",
-                    description: "This is a test request to see if the API works",
-                    expertiseRequired: null,
-                    urgency: "medium" as const,
-                    helpType: "general" as const,
-                    helpLocationState: null,
-                    helpLocationDistrict: null,
-                    helpLocationArea: null,
-                    helpLocationGps: null,
-                    helpLocationNotApplicable: false,
-                    targetExpertId: null,
-                    attachments: [],
-                  };
-                  console.log("Testing API with:", testData);
-                  createRequestMutation.mutate(testData);
-                }}
-                size="sm"
-              >
-                Test API
-              </Button>
-              
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  form.reset();
-                  setCharCount(0);
-                  setAttachments([]);
-                }}
-              >
-                Clear
-              </Button>
-            </div>
-          </form>
-        </Form>
-      </CardContent>
-    </Card>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      form.reset();
+                      setCharCount(0);
+                      setAttachments([]);
+                      toast({
+                        title: "Form cleared",
+                        description: "All fields have been reset.",
+                      });
+                    }}
+                    disabled={createRequestMutation.isPending}
+                    className="bg-white/80 border-gray-200 hover:bg-gray-50 py-3 rounded-xl h-12 min-w-[100px]"
+                  >
+                    Clear
+                  </Button>
+                </div>
+              </form>
+            </Form>
+          </CardContent>
+        </div>
+      </Card>
+    </>
   );
 }

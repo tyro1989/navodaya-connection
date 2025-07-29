@@ -4,7 +4,8 @@ import { storage } from "./storage";
 import { smsService } from "./sms";
 import { 
   insertUserSchema, insertRequestSchema, insertResponseSchema, insertReviewSchema, 
-  insertEmailVerificationSchema, insertPrivateMessageSchema, emailSignupSchema, emailLoginSchema
+  insertEmailVerificationSchema, insertPrivateMessageSchema, emailSignupSchema, emailLoginSchema,
+  insertNotificationSchema
 } from "@shared/schema";
 import { z } from "zod";
 import { Router } from "express";
@@ -16,6 +17,10 @@ import express from "express";
 import passport from "passport";
 import { configureAuth, isAuthenticated } from "./auth";
 import crypto from "crypto";
+import bcrypt from "bcrypt";
+import { getPool, getDb } from "./db-conditional";
+import { otpVerifications } from "@shared/schema";
+import { desc } from "drizzle-orm";
 
 const router = Router();
 
@@ -50,6 +55,43 @@ const profileImageUpload = multer({
   }
 });
 
+// Configure multer for request attachments
+const requestAttachmentStorage = multer.diskStorage({
+  destination: async (req, file, cb) => {
+    const uploadDir = path.join(process.cwd(), 'uploads', 'request-attachments');
+    if (!existsSync(uploadDir)) {
+      await mkdir(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const extension = path.extname(file.originalname);
+    cb(null, `attachment-${uniqueSuffix}${extension}`);
+  }
+});
+
+const requestAttachmentUpload = multer({
+  storage: requestAttachmentStorage,
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = [
+      'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+      'application/pdf',
+      'application/msword', 
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/plain'
+    ];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Please upload images, PDF, DOC, or TXT files.'));
+    }
+  }
+});
+
 // Authentication middleware
 const authenticateUser = (req: Request, res: Response, next: any) => {
   const userId = req.session.userId;
@@ -73,11 +115,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Phone-based Signup
   app.post("/api/auth/signup", async (req: Request, res: Response) => {
     try {
-      const { phone, email, password, confirmPassword, name, state, district, batchYear } = req.body;
+      const { phone, email, password, confirmPassword, name, state, district, batchYear, profession } = req.body;
       
       // Validate required fields
-      if (!phone || !password || !confirmPassword || !name || !state || !district || !batchYear) {
-        return res.status(400).json({ message: "Phone, password, name, state, district, and batch year are required" });
+      if (!phone || !password || !confirmPassword || !name || !state || !district || !batchYear || !profession) {
+        return res.status(400).json({ message: "Phone, password, name, state, district, batch year, and profession are required" });
       }
       
       // Check password confirmation
@@ -100,9 +142,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         state: state,
         district: district,
         batchYear: parseInt(batchYear),
+        profession: profession,
         authProvider: 'local',
         emailVerified: false,
-        profession: '',
         gender: null,
         professionOther: null,
         currentState: null,
@@ -161,13 +203,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Debug endpoint to check users (TEMPORARY)
+  app.get("/api/debug/users", async (req: Request, res: Response) => {
+    try {
+      const users = await storage.getAllUsers();
+      const usersInfo = users.map(u => ({
+        id: u.id,
+        phone: u.phone,
+        name: u.name,
+        hasPassword: !!u.password,
+        authProvider: u.authProvider
+      }));
+      res.json({ users: usersInfo });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch users" });
+    }
+  });
+
+  // Debug endpoint to check OTPs (TEMPORARY)
+  app.get("/api/debug/otps", async (req: Request, res: Response) => {
+    try {
+      const db = getDb();
+      if (!db) {
+        return res.json({ message: "Using in-memory storage, no database OTPs" });
+      }
+      const otps = await db.select().from(otpVerifications).orderBy(desc(otpVerifications.createdAt)).limit(10);
+      res.json({ otps });
+    } catch (error) {
+      console.error('Debug OTPs error:', error);
+      res.status(500).json({ error: "Failed to fetch OTPs" });
+    }
+  });
+
   // Phone-based Login (for existing users)
   app.post("/api/auth/login", (req: Request, res: Response, next) => {
+    console.log("Password login attempt:", { phone: req.body.phone, passwordLength: req.body.password?.length });
     passport.authenticate('local', (err: any, user: any, info: any) => {
       if (err) {
+        console.error("Passport authentication error:", err);
         return res.status(500).json({ message: "Authentication error" });
       }
       if (!user) {
+        console.log("Password login failed:", info);
         return res.status(401).json({ message: info?.message || "Invalid phone or password" });
       }
       
@@ -185,6 +262,144 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       });
     })(req, res, next);
+  });
+
+  // OTP-based Authentication Routes
+  app.post("/api/auth/send-otp", async (req: Request, res: Response) => {
+    try {
+      const { phone, method } = req.body; // method can be 'sms' or 'whatsapp'
+      
+      if (!phone) {
+        return res.status(400).json({ message: "Phone number is required" });
+      }
+      
+      // Generate OTP
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+      
+      // Store OTP
+      await storage.createOtpVerification({
+        phone,
+        otp,
+        expiresAt
+      });
+      
+      // Send OTP via WhatsApp or SMS
+      let otpSent = false;
+      let sentVia = 'SMS';
+      
+      if (method === 'whatsapp' && smsService.sendWhatsAppOTP) {
+        otpSent = await smsService.sendWhatsAppOTP(phone, otp);
+        sentVia = 'WhatsApp';
+        
+        // Fallback to SMS if WhatsApp fails
+        if (!otpSent) {
+          console.log('WhatsApp OTP failed, falling back to SMS');
+          otpSent = await smsService.sendOTP(phone, otp);
+          sentVia = 'SMS';
+        }
+      } else {
+        otpSent = await smsService.sendOTP(phone, otp);
+      }
+      
+      if (otpSent) {
+        res.json({ 
+          message: `OTP sent successfully via ${sentVia}`,
+          method: sentVia.toLowerCase(),
+          otp: process.env.NODE_ENV === 'development' ? otp : undefined // Only show OTP in development
+        });
+      } else {
+        res.status(500).json({ message: "Failed to send OTP" });
+      }
+    } catch (error) {
+      console.error('Send OTP error:', error);
+      console.error('Error details:', error instanceof Error ? error.message : error);
+      console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+      res.status(500).json({ message: "Failed to send OTP" });
+    }
+  });
+
+  app.post("/api/auth/verify-otp", async (req: Request, res: Response) => {
+    try {
+      const { phone, otp } = req.body;
+      console.log("=== OTP VERIFICATION REQUEST ===");
+      console.log("Request body:", req.body);
+      console.log("Phone:", phone, "OTP:", otp);
+      
+      if (!phone || !otp) {
+        console.log("Missing phone or OTP");
+        return res.status(400).json({ message: "Phone number and OTP are required" });
+      }
+      
+      // Verify OTP
+      console.log("Calling storage.verifyOtp with:", { phone, otp });
+      const isValidOtp = await storage.verifyOtp(phone, otp);
+      console.log("OTP verification result:", isValidOtp);
+      
+      if (!isValidOtp) {
+        return res.status(400).json({ message: "Invalid or expired OTP" });
+      }
+      
+      // Check if user exists
+      let user = await storage.getUserByPhone(phone);
+      let isNewUser = false;
+      
+      if (!user) {
+        // Create new user with minimal data
+        const userData = {
+          phone: phone,
+          email: null,
+          password: null,
+          name: "New User", // Will be updated during registration
+          state: "",
+          district: "",
+          batchYear: new Date().getFullYear(),
+          profession: "Studying & Education", // Default profession for OTP users
+          authProvider: 'otp',
+          emailVerified: false,
+          gender: null,
+          professionOther: null,
+          currentState: null,
+          currentDistrict: null,
+          pinCode: null,
+          gpsLocation: null,
+          gpsEnabled: false,
+          helpAreas: [],
+          helpAreasOther: null,
+          expertiseAreas: [],
+          isExpert: false,
+          dailyRequestLimit: 3,
+          phoneVisible: false,
+          upiId: null,
+          bio: null,
+          isActive: true,
+          lastActive: new Date(),
+          createdAt: new Date()
+        };
+        
+        user = await storage.createUserWithPhone(userData);
+        isNewUser = true;
+      }
+      
+      // Log the user in
+      req.logIn(user, (err) => {
+        if (err) {
+          return res.status(500).json({ message: "Login error" });
+        }
+        
+        // Store user ID in session for compatibility
+        (req.session as any).userId = user.id;
+        
+        res.json({ 
+          message: "OTP verified successfully",
+          user: { id: user.id, phone: user.phone, name: user.name },
+          isNewUser
+        });
+      });
+    } catch (error) {
+      console.error('Verify OTP error:', error);
+      res.status(500).json({ message: "Failed to verify OTP" });
+    }
   });
 
   // Get current user
@@ -251,6 +466,84 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
+  // Update user profile (for onboarding completion)
+  app.put("/api/auth/profile", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      console.log("Profile update request received:", req.body);
+      const userId = (req.session as any).userId;
+      console.log("User ID from session:", userId);
+      if (!userId) {
+        console.log("No user ID in session, authentication required");
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      // Validate required fields for profile completion
+      // Only name, batchYear, state, district are mandatory, password is now also required
+      const requiredFields = ['name', 'batchYear', 'state', 'district', 'password'];
+      const missingFields = requiredFields.filter(field => !req.body[field]);
+      
+      if (missingFields.length > 0) {
+        return res.status(400).json({ 
+          message: `Missing required fields: ${missingFields.join(', ')}` 
+        });
+      }
+
+      // Validate password confirmation
+      if (req.body.password !== req.body.confirmPassword) {
+        return res.status(400).json({ message: "Passwords do not match" });
+      }
+
+      // Validate password length
+      if (req.body.password.length < 6) {
+        return res.status(400).json({ message: "Password must be at least 6 characters long" });
+      }
+
+      // Prepare update data with optional fields
+      const updateData: any = {
+        name: req.body.name.trim(),
+        batchYear: parseInt(req.body.batchYear),
+        state: req.body.state.trim(),
+        district: req.body.district.trim(),
+      };
+
+      // Hash and add password
+      updateData.password = await bcrypt.hash(req.body.password, 10);
+
+      // Add optional fields if provided
+      if (req.body.email?.trim()) {
+        updateData.email = req.body.email.trim().toLowerCase();
+      }
+      if (req.body.profession?.trim()) {
+        updateData.profession = req.body.profession.trim();
+        if (req.body.profession === "Other" && req.body.professionOther?.trim()) {
+          updateData.professionOther = req.body.professionOther.trim();
+        }
+      }
+      if (req.body.bio?.trim()) {
+        updateData.bio = req.body.bio.trim();
+      }
+
+      // Update the user profile
+      console.log("Updating user profile with data:", { ...updateData, password: '[HASHED]' });
+      const updatedUser = await storage.updateUser(userId, updateData);
+      console.log("Updated user:", updatedUser ? { ...updatedUser, password: '[HASHED]' } : null);
+
+      if (!updatedUser) {
+        console.log("User not found for ID:", userId);
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      console.log("Profile update successful");
+      res.json({ 
+        message: "Profile updated successfully",
+        user: updatedUser 
+      });
+    } catch (error) {
+      console.error("Profile update error:", error);
+      res.status(500).json({ message: "Failed to update profile" });
+    }
+  });
+
   // User routes
   app.get("/api/users/experts", async (req, res) => {
     try {
@@ -315,16 +608,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/requests", async (req, res) => {
     try {
-      const { userId, status } = req.query;
+      const { userId, status, page = "1", limit = "20" } = req.query;
+      const pageNum = parseInt(page as string);
+      const limitNum = parseInt(limit as string);
+      const offset = (pageNum - 1) * limitNum;
+      
       let requests;
+      let total;
       
       if (userId) {
-        requests = await storage.getRequestsByUserId(parseInt(userId as string));
+        const result = await storage.getRequestsByUserId(parseInt(userId as string), status as string, limitNum, offset);
+        requests = result.requests;
+        total = result.total;
       } else {
-        requests = await storage.getOpenRequests();
+        const result = await storage.getRequests(status as string || "open", limitNum, offset);
+        requests = result.requests;
+        total = result.total;
       }
       
-      res.json({ requests });
+      res.json({ 
+        requests, 
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total,
+          totalPages: Math.ceil(total / limitNum)
+        }
+      });
     } catch (error) {
       res.status(500).json({ message: "Failed to get requests" });
     }
@@ -409,6 +719,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
       
       const response = await storage.createResponse(responseData);
+      
+      // Get request details for notification
+      const request = await storage.getRequestById(responseData.requestId);
+      if (request && request.userId !== req.session.userId) {
+        // Get expert details for notification
+        const expert = await storage.getUserById(req.session.userId);
+        if (expert) {
+          // Create notification for request owner
+          await storage.createNotification({
+            userId: request.userId,
+            type: 'response',
+            title: 'New Response to Your Request',
+            message: `${expert.name} responded to your request "${request.title}"`,
+            entityType: 'request',
+            entityId: request.id,
+            actionUserId: req.session.userId,
+            isRead: false,
+          });
+        }
+      }
+      
       res.json({ response });
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -484,6 +815,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Top Community Helpers (last 30 days)
+  app.get("/api/stats/top-helpers", async (req, res) => {
+    try {
+      const topHelpers = await storage.getTopCommunityHelpers();
+      res.json({ topHelpers });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get top community helpers" });
+    }
+  });
+
   app.get("/api/stats/expert/:expertId", async (req, res) => {
     try {
       const expertId = parseInt(req.params.expertId);
@@ -500,9 +841,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ message: "Not authenticated" });
       }
       
+      console.log("Getting personal stats for user ID:", req.session.userId);
       const stats = await storage.getPersonalStats(req.session.userId);
+      console.log("Personal stats result:", stats);
       res.json({ stats });
     } catch (error) {
+      console.error("Error getting personal stats:", error);
       res.status(500).json({ message: "Failed to get personal stats" });
     }
   });
@@ -524,6 +868,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         content,
         attachments: [],
       });
+
+      // Create notification for message recipient
+      const sender = await storage.getUserById(senderId);
+      if (sender) {
+        await storage.createNotification({
+          userId: receiverId,
+          type: 'message',
+          title: 'New Message',
+          message: `${sender.name} sent you a message: ${content.substring(0, 50)}${content.length > 50 ? '...' : ''}`,
+          entityType: 'message',
+          entityId: message.id,
+          actionUserId: senderId,
+          isRead: false,
+        });
+      }
 
       res.json({ message });
     } catch (error) {
@@ -574,7 +933,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Profile image upload endpoint
-  app.post("/api/upload/profile-image", authenticateUser, profileImageUpload.single('image'), (req: Request, res: Response) => {
+  app.post("/api/upload/profile-image", isAuthenticated, profileImageUpload.single('image'), (req: Request, res: Response) => {
     try {
       if (!req.file) {
         return res.status(400).json({ error: "No file uploaded" });
@@ -591,6 +950,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Profile image upload error:", error);
       res.status(500).json({ error: "Failed to upload profile image" });
+    }
+  });
+
+  // Request attachment upload endpoint
+  app.post("/api/upload/request-attachment", isAuthenticated, requestAttachmentUpload.single('attachment'), (req: Request, res: Response) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      // Return the relative path to the uploaded file
+      const attachmentUrl = `/uploads/request-attachments/${req.file.filename}`;
+      
+      res.json({
+        success: true,
+        url: attachmentUrl,
+        originalName: req.file.originalname,
+        message: "Attachment uploaded successfully"
+      });
+    } catch (error) {
+      console.error("Request attachment upload error:", error);
+      res.status(500).json({ error: "Failed to upload attachment" });
     }
   });
 
@@ -632,6 +1013,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
       
       const review = await storage.createResponseReview(reviewData);
+      
+      // Get response details for notification
+      const responses = await storage.getResponsesByRequestId(reviewData.requestId);
+      const response = responses.find(r => r.id === reviewData.responseId);
+      if (response && response.expertId !== req.session.userId) {
+        // Get reviewer details
+        const reviewer = await storage.getUserById(req.session.userId);
+        if (reviewer) {
+          // Create notification for response author
+          const stars = '⭐'.repeat(reviewData.rating);
+          await storage.createNotification({
+            userId: response.expertId,
+            type: 'response_rating',
+            title: 'Your Response Received a Rating',
+            message: `${reviewer.name} rated your response ${stars} (${reviewData.rating}/5)${reviewData.comment ? ': "' + reviewData.comment.substring(0, 50) + (reviewData.comment.length > 50 ? '..."' : '"') : ''}`,
+            entityType: 'response',
+            entityId: response.id,
+            actionUserId: req.session.userId,
+            isRead: false,
+          });
+        }
+      }
+      
       res.json({ review });
     } catch (error) {
       res.status(500).json({ message: "Failed to create response review" });
@@ -645,6 +1049,88 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ reviews });
     } catch (error) {
       res.status(500).json({ message: "Failed to get response reviews" });
+    }
+  });
+
+  // Health check endpoint
+  app.get("/api/health", async (req, res) => {
+    try {
+      // Check database connection
+      const db = getDb();
+      if (db) {
+        // Try a simple query to verify database connectivity
+        const pool = getPool();
+        if (pool) {
+          await pool.query('SELECT 1');
+        }
+      }
+      
+      res.status(200).json({
+        status: "healthy",
+        timestamp: new Date().toISOString(),
+        environment: process.env.NODE_ENV || "development",
+        database: db ? "connected" : "not configured"
+      });
+    } catch (error) {
+      res.status(503).json({
+        status: "unhealthy",
+        timestamp: new Date().toISOString(),
+        error: error.message
+      });
+    }
+  });
+
+  // Notification routes
+  app.get("/api/notifications", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+      
+      const notifications = await storage.getUserNotifications(req.session.userId);
+      res.json({ notifications });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get notifications" });
+    }
+  });
+
+  app.get("/api/notifications/count", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+      
+      const count = await storage.getUnreadNotificationCount(req.session.userId);
+      res.json({ count });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get notification count" });
+    }
+  });
+
+  app.put("/api/notifications/:id/read", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+      
+      const notificationId = parseInt(req.params.id);
+      await storage.markNotificationAsRead(notificationId, req.session.userId);
+      res.json({ message: "Notification marked as read" });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to mark notification as read" });
+    }
+  });
+
+  app.put("/api/notifications/mark-all-read", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+      
+      await storage.markAllNotificationsAsRead(req.session.userId);
+      res.json({ message: "All notifications marked as read" });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to mark all notifications as read" });
     }
   });
 

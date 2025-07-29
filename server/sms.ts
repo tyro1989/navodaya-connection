@@ -2,6 +2,7 @@ import axios from 'axios';
 
 export interface SMSService {
   sendOTP(phone: string, otp: string): Promise<boolean>;
+  sendWhatsAppOTP?(phone: string, otp: string): Promise<boolean>;
 }
 
 // Twilio SMS Service Implementation
@@ -57,11 +58,13 @@ export class MSG91SMSService implements SMSService {
   private apiKey: string;
   private senderId: string;
   private templateId: string;
+  private whatsappTemplateId: string;
 
   constructor() {
     this.apiKey = process.env.MSG91_API_KEY || '';
     this.senderId = process.env.MSG91_SENDER_ID || '';
     this.templateId = process.env.MSG91_TEMPLATE_ID || '';
+    this.whatsappTemplateId = process.env.MSG91_WHATSAPP_TEMPLATE_ID || '';
   }
 
   async sendOTP(phone: string, otp: string): Promise<boolean> {
@@ -98,12 +101,67 @@ export class MSG91SMSService implements SMSService {
       return false;
     }
   }
+
+  async sendWhatsAppOTP(phone: string, otp: string): Promise<boolean> {
+    try {
+      if (!this.apiKey || !this.whatsappTemplateId) {
+        console.error('MSG91 WhatsApp credentials not configured');
+        return false;
+      }
+
+      const url = 'https://api.msg91.com/api/v5/whatsapp/whatsapp-outbound-message/bulk';
+      const payload = {
+        to: phone.replace('+91', '91'), // MSG91 expects format: 919876543210
+        type: 'template',
+        template: {
+          name: this.whatsappTemplateId,
+          language: {
+            code: 'en'
+          },
+          components: [
+            {
+              type: 'body',
+              parameters: [
+                {
+                  type: 'text',
+                  text: otp
+                }
+              ]
+            }
+          ]
+        }
+      };
+
+      const response = await axios.post(url, payload, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authkey': this.apiKey
+        }
+      });
+
+      if (response.data.type === 'success') {
+        console.log(`WhatsApp OTP sent successfully to ${phone}`);
+        return true;
+      } else {
+        console.error('MSG91 WhatsApp API error:', response.data);
+        return false;
+      }
+    } catch (error) {
+      console.error('Failed to send WhatsApp OTP via MSG91:', error);
+      return false;
+    }
+  }
 }
 
 // Mock SMS Service for development/testing
 export class MockSMSService implements SMSService {
   async sendOTP(phone: string, otp: string): Promise<boolean> {
     console.log(`[MOCK SMS] OTP ${otp} sent to ${phone}`);
+    return true;
+  }
+
+  async sendWhatsAppOTP(phone: string, otp: string): Promise<boolean> {
+    console.log(`[MOCK WHATSAPP] OTP ${otp} sent to ${phone}`);
     return true;
   }
 }

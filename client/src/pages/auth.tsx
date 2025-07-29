@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation } from "@tanstack/react-query";
@@ -6,68 +6,88 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { apiRequest } from "@/lib/queryClient";
 import { useLocation } from "wouter";
 import { z } from "zod";
+import { useAuth } from "@/lib/auth";
 
-// Phone-based signup schema
-const phoneSignupSchema = z.object({
-  phone: z.string().min(10, "Phone number must be at least 10 digits"),
-  email: z.string().email("Please enter a valid email").optional().or(z.literal("")),
-  password: z.string().min(6, "Password must be at least 6 characters"),
-  confirmPassword: z.string().min(6, "Please confirm your password"),
-  name: z.string().min(2, "Name must be at least 2 characters"),
-  batchYear: z.number().int().min(1970).max(new Date().getFullYear() + 10),
-  state: z.string().min(2, "JNV State is required"), 
-  district: z.string().min(2, "JNV District is required")
-}).refine((data) => data.password === data.confirmPassword, {
-  message: "Passwords don't match",
-  path: ["confirmPassword"],
-});
+// Common country codes
+const COUNTRY_CODES = [
+  { code: "+91", name: "India", flag: "🇮🇳" },
+  { code: "+1", name: "US/Canada", flag: "🇺🇸" },
+  { code: "+44", name: "UK", flag: "🇬🇧" },
+  { code: "+971", name: "UAE", flag: "🇦🇪" },
+  { code: "+65", name: "Singapore", flag: "🇸🇬" },
+  { code: "+61", name: "Australia", flag: "🇦🇺" },
+];
 
 // Login schema for existing users
 const phoneLoginSchema = z.object({
+  countryCode: z.string().min(1, "Country code is required"),
   phone: z.string().min(10, "Phone number must be at least 10 digits"),
   password: z.string().min(1, "Password is required")
 });
 
-type PhoneSignup = z.infer<typeof phoneSignupSchema>;
+// OTP schemas
+const otpRequestSchema = z.object({
+  countryCode: z.string().min(1, "Country code is required"),
+  phone: z.string().min(10, "Phone number must be at least 10 digits"),
+});
+
+const otpVerifySchema = z.object({
+  countryCode: z.string().min(1, "Country code is required"),
+  phone: z.string().min(10, "Phone number must be at least 10 digits"),
+  otp: z.string().length(6, "OTP must be 6 digits")
+});
+
 type PhoneLogin = z.infer<typeof phoneLoginSchema>;
+type OTPRequest = z.infer<typeof otpRequestSchema>;
+type OTPVerify = z.infer<typeof otpVerifySchema>;
 
 export default function AuthPage() {
   const [, navigate] = useLocation();
-  const [isLogin, setIsLogin] = useState(false); // Default to signup
+  const { login, sendOtp } = useAuth();
+  const [otpSent, setOtpSent] = useState(false);
+  const [phoneForOtp, setPhoneForOtp] = useState('');
 
   // Form configurations
   const loginForm = useForm<PhoneLogin>({
     resolver: zodResolver(phoneLoginSchema),
     defaultValues: {
-      phone: "",
-      password: ""
+      countryCode: "+91",
+      phone: "9821489589",
+      password: "password123"
     }
   });
 
-  const signupForm = useForm<PhoneSignup>({
-    resolver: zodResolver(phoneSignupSchema),
+  const otpRequestForm = useForm<OTPRequest>({
+    resolver: zodResolver(otpRequestSchema),
     defaultValues: {
+      countryCode: "+91",
+      phone: "9876543210"
+    }
+  });
+
+  const otpVerifyForm = useForm<OTPVerify>({
+    resolver: zodResolver(otpVerifySchema),
+    defaultValues: {
+      countryCode: "+91",
       phone: "",
-      email: "",
-      password: "",
-      confirmPassword: "",
-      name: "",
-      batchYear: new Date().getFullYear(),
-      state: "",
-      district: ""
+      otp: ""
     }
   });
 
   // Mutations
   const loginMutation = useMutation({
     mutationFn: async (data: PhoneLogin) => {
-      return await apiRequest("/api/auth/login", {
-        method: "POST",
-        body: JSON.stringify(data),
-      });
+      const loginData = {
+        phone: data.countryCode + data.phone,
+        password: data.password
+      };
+      return await apiRequest("POST", "/api/auth/login", loginData);
     },
     onSuccess: () => {
       navigate("/");
@@ -77,241 +97,300 @@ export default function AuthPage() {
     },
   });
 
-  const signupMutation = useMutation({
-    mutationFn: async (data: PhoneSignup) => {
-      return await apiRequest("/api/auth/signup", {
-        method: "POST",
-        body: JSON.stringify(data),
-      });
+  const sendOtpMutation = useMutation({
+    mutationFn: async (data: OTPRequest) => {
+      const fullPhone = data.countryCode + data.phone;
+      return await sendOtp(fullPhone, 'whatsapp');
     },
-    onSuccess: () => {
-      navigate("/");
+    onSuccess: (response) => {
+      const countryCode = otpRequestForm.getValues('countryCode');
+      const phone = otpRequestForm.getValues('phone');
+      const fullPhone = countryCode + phone;
+      setOtpSent(true);
+      setPhoneForOtp(fullPhone);
+      // Set the phone value in the OTP verification form
+      otpVerifyForm.setValue('countryCode', countryCode);
+      otpVerifyForm.setValue('phone', phone);
     },
     onError: (error: Error) => {
-      console.error("Signup failed:", error.message);
+      console.error("Send OTP failed:", error.message);
     },
   });
 
-  // JNV States list
-  const jnvStates = [
-    "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh",
-    "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka",
-    "Kerala", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya", "Mizoram",
-    "Nagaland", "Odisha", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu",
-    "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal"
-  ];
+  const verifyOtpMutation = useMutation({
+    mutationFn: async (data: OTPVerify) => {
+      const fullPhone = data.countryCode + data.phone;
+      const response = await login(fullPhone, data.otp);
+      return response;
+    },
+    onSuccess: (response) => {
+      if (response && response.user) {
+        navigate("/");
+      }
+    },
+    onError: (error: Error) => {
+      console.error("OTP verification failed:", error.message);
+    },
+  });
 
   const onLoginSubmit = (data: PhoneLogin) => {
     loginMutation.mutate(data);
   };
 
-  const onSignupSubmit = (data: PhoneSignup) => {
-    signupMutation.mutate(data);
+  const onSendOtp = (data: OTPRequest) => {
+    sendOtpMutation.mutate(data);
   };
 
+  const onVerifyOtp = (data: OTPVerify) => {
+    verifyOtpMutation.mutate(data);
+  };
+
+  // Auto-login on page load for testing - DISABLED
+  // useEffect(() => {
+  //   const autoLogin = async () => {
+  //     try {
+  //       const response = await apiRequest("POST", "/api/auth/login", {
+  //         phone: "9821489589",
+  //         password: "password123"
+  //       });
+  //       navigate("/");
+  //     } catch (error) {
+  //       console.log("Auto-login failed, showing login form");
+  //     }
+  //   };
+  //   autoLogin();
+  // }, [navigate]);
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 px-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl font-bold">
-            {isLogin ? "Sign In" : "Join Navodaya Connection"}
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 px-4 py-8">
+      <div className="absolute inset-0 bg-gradient-to-br from-blue-600/10 via-indigo-600/5 to-purple-600/10"></div>
+      <Card className="w-full max-w-md relative z-10 shadow-2xl border-0 bg-white/80 backdrop-blur-sm">
+        <CardHeader className="text-center pb-2">
+          <div className="mx-auto w-16 h-16 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-2xl flex items-center justify-center mb-4 shadow-lg">
+            <span className="text-white font-bold text-2xl">N</span>
+          </div>
+          <CardTitle className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+            Welcome Back
           </CardTitle>
-          <CardDescription>
-            {isLogin 
-              ? "Sign in to your account" 
-              : "Create your account to connect with Navodaya alumni"
-            }
+          <CardDescription className="text-gray-600 text-base mt-2">
+            Connect with your Navodaya family
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          {isLogin ? (
-            <form onSubmit={loginForm.handleSubmit(onLoginSubmit)} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="phone">Phone Number</Label>
-                <Input
-                  id="phone"
-                  type="tel"
-                  {...loginForm.register("phone")}
-                  placeholder="+91 9876543210"
-                />
-                {loginForm.formState.errors.phone && (
-                  <p className="text-sm text-red-500">
-                    {loginForm.formState.errors.phone.message}
-                  </p>
-                )}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  {...loginForm.register("password")}
-                />
-                {loginForm.formState.errors.password && (
-                  <p className="text-sm text-red-500">
-                    {loginForm.formState.errors.password.message}
-                  </p>
-                )}
-              </div>
-              <Button
-                type="submit"
-                className="w-full"
-                disabled={loginMutation.isPending}
+        <CardContent className="space-y-6 pt-2">
+          <Tabs defaultValue="whatsapp" className="w-full">
+            <TabsList className="grid w-full grid-cols-2 bg-gray-100/80 backdrop-blur-sm p-1 rounded-xl">
+              <TabsTrigger 
+                value="whatsapp" 
+                className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-blue-600 font-medium transition-all duration-200"
               >
-                {loginMutation.isPending ? "Signing in..." : "Sign In"}
-              </Button>
-            </form>
-          ) : (
-            <form onSubmit={signupForm.handleSubmit(onSignupSubmit)} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="name">Full Name *</Label>
-                  <Input
-                    id="name"
-                    {...signupForm.register("name")}
-                    placeholder="Your full name"
-                  />
-                  {signupForm.formState.errors.name && (
+                <span className="flex items-center gap-2">
+                  📱 WhatsApp
+                </span>
+              </TabsTrigger>
+              <TabsTrigger 
+                value="password"
+                className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-blue-600 font-medium transition-all duration-200"
+              >
+                <span className="flex items-center gap-2">
+                  🔐 Password
+                </span>
+              </TabsTrigger>
+            </TabsList>
+            
+            <TabsContent value="whatsapp" className="space-y-6 mt-6">
+              {!otpSent ? (
+                <form onSubmit={otpRequestForm.handleSubmit(onSendOtp)} className="space-y-6">
+                  <div className="space-y-3">
+                    <Label htmlFor="otp-phone" className="text-sm font-semibold text-gray-700">Phone Number</Label>
+                    <div className="flex gap-3">
+                      <Select
+                        value={otpRequestForm.watch("countryCode")}
+                        onValueChange={(value) => otpRequestForm.setValue("countryCode", value)}
+                      >
+                        <SelectTrigger className="w-32 h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500/20 transition-all duration-200">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="border-gray-200">
+                          {COUNTRY_CODES.map((country) => (
+                            <SelectItem key={country.code} value={country.code} className="hover:bg-blue-50">
+                              {country.flag} {country.code}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Input
+                        id="otp-phone"
+                        type="tel"
+                        {...otpRequestForm.register("phone")}
+                        placeholder="9876543210"
+                        className="flex-1 h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500/20 transition-all duration-200 text-base"
+                      />
+                    </div>
+                    {(otpRequestForm.formState.errors.countryCode || otpRequestForm.formState.errors.phone) && (
+                      <p className="text-sm text-red-500">
+                        {otpRequestForm.formState.errors.countryCode?.message || otpRequestForm.formState.errors.phone?.message}
+                      </p>
+                    )}
+                  </div>
+                  
+                  <Button
+                    type="submit"
+                    className="w-full h-12 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 border-0"
+                    disabled={sendOtpMutation.isPending}
+                  >
+                    {sendOtpMutation.isPending ? (
+                      <span className="flex items-center gap-2">
+                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                        Sending...
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-2">
+                        📱 Send WhatsApp OTP
+                      </span>
+                    )}
+                  </Button>
+                </form>
+              ) : (
+                <form onSubmit={otpVerifyForm.handleSubmit(onVerifyOtp)} className="space-y-6">
+                  <div className="text-center space-y-3 p-4 bg-green-50 rounded-xl border border-green-100">
+                    <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto">
+                      <span className="text-green-600 text-xl">📱</span>
+                    </div>
+                    <p className="text-sm text-gray-700 font-medium">
+                      OTP sent to {phoneForOtp}
+                    </p>
+                    <Badge variant="secondary" className="bg-green-100 text-green-700 border-green-200">
+                      via WhatsApp
+                    </Badge>
+                  </div>
+                  
+                  <div className="space-y-3">
+                    <Label htmlFor="otp" className="text-sm font-semibold text-gray-700">Enter 6-digit OTP</Label>
+                    <Input
+                      id="otp"
+                      type="text"
+                      maxLength={6}
+                      {...otpVerifyForm.register("otp")}
+                      placeholder="••••••"
+                      className="text-center text-2xl tracking-widest h-14 border-gray-200 focus:border-blue-500 focus:ring-blue-500/20 transition-all duration-200 font-mono"
+                    />
+                    {otpVerifyForm.formState.errors.otp && (
+                      <p className="text-sm text-red-500">
+                        {otpVerifyForm.formState.errors.otp.message}
+                      </p>
+                    )}
+                  </div>
+                  
+                  <div className="flex gap-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setOtpSent(false)}
+                      className="flex-1 h-12 border-gray-300 hover:bg-gray-50 rounded-xl transition-all duration-200"
+                    >
+                      ← Back
+                    </Button>
+                    <Button
+                      type="submit"
+                      className="flex-1 h-12 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 border-0"
+                      disabled={verifyOtpMutation.isPending}
+                    >
+                      {verifyOtpMutation.isPending ? (
+                        <span className="flex items-center gap-2">
+                          <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                          Verifying...
+                        </span>
+                      ) : (
+                        "✓ Verify OTP"
+                      )}
+                    </Button>
+                  </div>
+                  
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="w-full text-sm h-10 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all duration-200"
+                    onClick={() => {
+                      const countryCode = otpRequestForm.getValues('countryCode');
+                      const phone = otpRequestForm.getValues('phone');
+                      sendOtpMutation.mutate({ countryCode, phone });
+                    }}
+                    disabled={sendOtpMutation.isPending}
+                  >
+                    {sendOtpMutation.isPending ? "Sending..." : "🔄 Resend OTP"}
+                  </Button>
+                </form>
+              )}
+            </TabsContent>
+            
+            <TabsContent value="password" className="space-y-6 mt-6">
+              <form onSubmit={loginForm.handleSubmit(onLoginSubmit)} className="space-y-6">
+                <div className="space-y-3">
+                  <Label htmlFor="login-phone" className="text-sm font-semibold text-gray-700">Phone Number</Label>
+                  <div className="flex gap-3">
+                    <Select
+                      value={loginForm.watch("countryCode")}
+                      onValueChange={(value) => loginForm.setValue("countryCode", value)}
+                    >
+                      <SelectTrigger className="w-32 h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500/20 transition-all duration-200">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="border-gray-200">
+                        {COUNTRY_CODES.map((country) => (
+                          <SelectItem key={country.code} value={country.code} className="hover:bg-blue-50">
+                            {country.flag} {country.code}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      id="login-phone"
+                      type="tel"
+                      {...loginForm.register("phone")}
+                      placeholder="9876543210"
+                      className="flex-1 h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500/20 transition-all duration-200 text-base"
+                    />
+                  </div>
+                  {(loginForm.formState.errors.countryCode || loginForm.formState.errors.phone) && (
                     <p className="text-sm text-red-500">
-                      {signupForm.formState.errors.name.message}
+                      {loginForm.formState.errors.countryCode?.message || loginForm.formState.errors.phone?.message}
                     </p>
                   )}
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="batchYear">12th Passing Year *</Label>
-                  <Input
-                    id="batchYear"
-                    type="number"
-                    {...signupForm.register("batchYear", { valueAsNumber: true })}
-                    placeholder="2020"
-                  />
-                  {signupForm.formState.errors.batchYear && (
-                    <p className="text-sm text-red-500">
-                      {signupForm.formState.errors.batchYear.message}
-                    </p>
-                  )}
-                </div>
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="phone">Phone Number *</Label>
-                <Input
-                  id="phone"
-                  type="tel"
-                  {...signupForm.register("phone")}
-                  placeholder="+91 9876543210"
-                />
-                {signupForm.formState.errors.phone && (
-                  <p className="text-sm text-red-500">
-                    {signupForm.formState.errors.phone.message}
-                  </p>
-                )}
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="email">Email (Optional)</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  {...signupForm.register("email")}
-                  placeholder="your.email@example.com"
-                />
-                {signupForm.formState.errors.email && (
-                  <p className="text-sm text-red-500">
-                    {signupForm.formState.errors.email.message}
-                  </p>
-                )}
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="password">Password *</Label>
+                <div className="space-y-3">
+                  <Label htmlFor="password" className="text-sm font-semibold text-gray-700">Password</Label>
                   <Input
                     id="password"
                     type="password"
-                    {...signupForm.register("password")}
-                    placeholder="Minimum 6 characters"
+                    {...loginForm.register("password")}
+                    placeholder="Enter your password"
+                    className="h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500/20 transition-all duration-200 text-base"
                   />
-                  {signupForm.formState.errors.password && (
+                  {loginForm.formState.errors.password && (
                     <p className="text-sm text-red-500">
-                      {signupForm.formState.errors.password.message}
+                      {loginForm.formState.errors.password.message}
                     </p>
                   )}
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="confirmPassword">Confirm Password *</Label>
-                  <Input
-                    id="confirmPassword"
-                    type="password"
-                    {...signupForm.register("confirmPassword")}
-                    placeholder="Re-enter password"
-                  />
-                  {signupForm.formState.errors.confirmPassword && (
-                    <p className="text-sm text-red-500">
-                      {signupForm.formState.errors.confirmPassword.message}
-                    </p>
+                <Button
+                  type="submit"
+                  className="w-full h-12 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 border-0"
+                  disabled={loginMutation.isPending}
+                >
+                  {loginMutation.isPending ? (
+                    <span className="flex items-center gap-2">
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                      Signing in...
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-2">
+                      🔐 Sign In
+                    </span>
                   )}
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="state">JNV State *</Label>
-                  <select
-                    id="state"
-                    {...signupForm.register("state")}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <option value="">Select state</option>
-                    {jnvStates.map((state) => (
-                      <option key={state} value={state}>
-                        {state}
-                      </option>
-                    ))}
-                  </select>
-                  {signupForm.formState.errors.state && (
-                    <p className="text-sm text-red-500">
-                      {signupForm.formState.errors.state.message}
-                    </p>
-                  )}
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="district">JNV District *</Label>
-                  <Input
-                    id="district"
-                    {...signupForm.register("district")}
-                    placeholder="District name"
-                  />
-                  {signupForm.formState.errors.district && (
-                    <p className="text-sm text-red-500">
-                      {signupForm.formState.errors.district.message}
-                    </p>
-                  )}
-                </div>
-              </div>
-              
-              <Button
-                type="submit"
-                className="w-full"
-                disabled={signupMutation.isPending}
-              >
-                {signupMutation.isPending ? "Creating Account..." : "Create Account"}
-              </Button>
-            </form>
-          )}
-          
-          <div className="text-center">
-            <Button
-              variant="link"
-              onClick={() => setIsLogin(!isLogin)}
-              className="text-sm"
-            >
-              {isLogin 
-                ? "Don't have an account? Sign up" 
-                : "Already have an account? Sign in"
-              }
-            </Button>
-          </div>
+                </Button>
+              </form>
+            </TabsContent>
+          </Tabs>
         </CardContent>
       </Card>
     </div>

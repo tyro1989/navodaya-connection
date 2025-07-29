@@ -1,7 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,17 +38,12 @@ import {
 } from "lucide-react";
 import { 
   PROFESSION_CATEGORIES, 
-  HELP_AREAS_CATEGORIES, 
-  EXPERTISE_CATEGORIES, 
   INDIAN_STATES, 
   INDIAN_DISTRICTS 
 } from "@/lib/constants";
 import { Label } from "@/components/ui/label";
 
-const profileFormSchema = insertUserSchema.partial().extend({
-  expertiseAreas: z.array(z.string()).optional(),
-  helpAreas: z.array(z.string()).optional(),
-});
+const profileFormSchema = insertUserSchema.partial();
 
 type ProfileFormData = z.infer<typeof profileFormSchema>;
 
@@ -59,71 +55,67 @@ export default function Profile() {
   const { user, logout, updateUser } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [, setLocation] = useLocation();
+  
+  // Early return if no user to prevent hook violations
+  if (!user) {
+    return <div>Loading...</div>;
+  }
+
   const [activeTab, setActiveTab] = useState("profile");
   const [uploadingImage, setUploadingImage] = useState(false);
   const [profileImageFile, setProfileImageFile] = useState<File | null>(null);
   const [profileImagePreview, setProfileImagePreview] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const form = useForm<ProfileFormData>({
     resolver: zodResolver(profileFormSchema),
     defaultValues: {
-      name: user?.name || "",
-      email: user?.email || "",
-      gender: user?.gender || "",
-      batchYear: user?.batchYear || 2020,
-      profession: user?.profession || "",
-      professionOther: user?.professionOther || "",
+      name: user.name || "",
+      email: user.email || "",
+      gender: user.gender || "",
+      batchYear: user.batchYear || 2020,
+      profession: user.profession || "",
+      professionOther: user.professionOther || "",
       // JNV Location
-      state: user?.state || "",
-      district: user?.district || "",
+      state: user.state || "",
+      district: user.district || "",
       // Current Residential Address
-      currentState: user?.currentState || "",
-      currentDistrict: user?.currentDistrict || "",
-      pinCode: user?.pinCode || "",
-      gpsLocation: user?.gpsLocation || "",
-      gpsEnabled: user?.gpsEnabled || false,
-      helpAreas: user?.helpAreas || [],
-      helpAreasOther: user?.helpAreasOther || "",
-      expertiseAreas: user?.expertiseAreas || [],
-      isExpert: user?.isExpert || false,
-      dailyRequestLimit: user?.dailyRequestLimit || 3,
-      phoneVisible: user?.phoneVisible || false,
-      upiId: user?.upiId || "",
-      bio: user?.bio || "",
-      profileImage: user?.profileImage || "",
+      currentState: user.currentState || "",
+      currentDistrict: user.currentDistrict || "",
+      pinCode: user.pinCode || "",
+      gpsLocation: user.gpsLocation || "",
+      gpsEnabled: user.gpsEnabled || false,
+      phoneVisible: user.phoneVisible || false,
+      upiId: user.upiId || "",
+      bio: user.bio || "",
+      profileImage: user.profileImage || "",
     },
   });
 
   // Reset form when user data changes
   useEffect(() => {
-    if (user) {
-      form.reset({
-        name: user.name || "",
-        email: user.email || "",
-        gender: user.gender || "",
-        batchYear: user.batchYear || 2020,
-        profession: user.profession || "",
-        professionOther: user.professionOther || "",
-        // JNV Location
-        state: user.state || "",
-        district: user.district || "",
-        // Current Residential Address
-        currentState: user.currentState || user.state || "", // Default to JNV state if no current state
-        currentDistrict: user.currentDistrict || user.district || "", // Default to JNV district if no current district
-        pinCode: user.pinCode || "",
-        gpsLocation: user.gpsLocation || "",
-        gpsEnabled: user.gpsEnabled || false,
-        helpAreas: user.helpAreas || [],
-        helpAreasOther: user.helpAreasOther || "",
-        expertiseAreas: user.expertiseAreas || [],
-        isExpert: user.isExpert || false,
-        dailyRequestLimit: user.dailyRequestLimit || 3,
-        phoneVisible: user.phoneVisible || false,
-        upiId: user.upiId || "",
-        bio: user.bio || "",
-        profileImage: user.profileImage || "",
-      });
-    }
+    form.reset({
+      name: user.name || "",
+      email: user.email || "",
+      gender: user.gender || "",
+      batchYear: user.batchYear || 2020,
+      profession: user.profession || "",
+      professionOther: user.professionOther || "",
+      // JNV Location
+      state: user.state || "",
+      district: user.district || "",
+      // Current Residential Address
+      currentState: user.currentState || user.state || "", // Default to JNV state if no current state
+      currentDistrict: user.currentDistrict || user.district || "", // Default to JNV district if no current district
+      pinCode: user.pinCode || "",
+      gpsLocation: user.gpsLocation || "",
+      gpsEnabled: user.gpsEnabled || false,
+      phoneVisible: user.phoneVisible || false,
+      upiId: user.upiId || "",
+      bio: user.bio || "",
+      profileImage: user.profileImage || "",
+    });
   }, [user, form]);
 
   const updateProfileMutation = useMutation({
@@ -138,16 +130,21 @@ export default function Profile() {
         const uploadResponse = await fetch('/api/upload/profile-image', {
           method: 'POST',
           body: formData,
+          credentials: 'include',
         });
         
         if (uploadResponse.ok) {
           const uploadData = await uploadResponse.json();
           imageUrl = uploadData.url;
+        } else {
+          const errorText = await uploadResponse.text();
+          console.error('Upload failed:', errorText);
+          throw new Error(`Failed to upload image: ${uploadResponse.status} ${uploadResponse.statusText}`);
         }
       }
       
       const response = await apiRequest("PUT", "/api/users/profile", { ...data, profileImage: imageUrl });
-      return response.json();
+      return response;
     },
     onSuccess: (data) => {
       updateUser(data.user);
@@ -171,6 +168,8 @@ export default function Profile() {
   const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
+      console.log('File selected:', file.name, file.type, file.size);
+      
       const maxSize = 5 * 1024 * 1024; // 5MB
       if (file.size > maxSize) {
         toast({
@@ -199,48 +198,47 @@ export default function Profile() {
         setProfileImagePreview(e.target?.result as string);
       };
       reader.readAsDataURL(file);
+      
+      toast({
+        title: "Image selected",
+        description: "Click 'Save Changes' to upload your new profile picture.",
+        duration: 3000,
+      });
     }
   };
 
   const removeProfileImage = () => {
     setProfileImageFile(null);
     setProfileImagePreview(null);
-    form.setValue("profileImage", "");
+    form.setValue("profileImage", null);
+    
+    toast({
+      title: "Profile picture removed",
+      description: "Click 'Save Changes' to update your profile.",
+      duration: 2000,
+    });
   };
 
   const onSubmit = (data: ProfileFormData) => {
     updateProfileMutation.mutate(data);
   };
 
-  const handleHelpAreasChange = (area: string, checked: boolean) => {
-    const currentAreas = form.getValues("helpAreas") || [];
-    if (checked) {
-      form.setValue("helpAreas", [...currentAreas, area]);
-    } else {
-      form.setValue("helpAreas", currentAreas.filter(a => a !== area));
-    }
-  };
-
-  if (!user) {
-    return <div>Loading...</div>;
-  }
-
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/50">
       <Navigation />
       
-      <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        <div className="mb-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">Profile Settings</h1>
-              <p className="text-gray-600 mt-2">Manage your personal information and preferences</p>
+      <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="mb-8">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="text-center sm:text-left">
+              <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent mb-2">Profile Settings</h1>
+              <p className="text-gray-600 text-lg max-w-2xl">Manage your personal information and preferences • Keep your profile updated</p>
             </div>
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center justify-center sm:justify-end">
               <Button
                 variant="outline"
-                onClick={() => window.location.href = "/"}
-                className="flex items-center space-x-2"
+                onClick={() => setLocation("/")}
+                className="flex items-center space-x-2 bg-white/80 backdrop-blur-sm border-gray-200/50 hover:bg-gray-50 transition-all duration-200 px-6 py-3 rounded-xl shadow-sm"
               >
                 <User className="h-4 w-4" />
                 <span>Back to Home</span>
@@ -250,101 +248,123 @@ export default function Profile() {
         </div>
 
         {/* Profile Header */}
-        <Card className="mb-8">
-          <CardContent className="p-6">
-            <div className="flex items-center space-x-6">
-              <div className="relative">
-                <Avatar className="h-24 w-24">
-                  <AvatarImage 
-                    src={profileImagePreview || user.profileImage || ""} 
-                    alt={user.name} 
-                  />
-                  <AvatarFallback className="text-xl">
-                    {user.name.split(" ").map(n => n[0]).join("").toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
+        <Card className="mb-8 shadow-xl border-0 bg-white/80 backdrop-blur-sm rounded-2xl overflow-hidden">
+          <div className="bg-gradient-to-r from-blue-600/10 via-indigo-600/5 to-purple-600/10 p-1">
+            <CardContent className="p-8 bg-white/90 backdrop-blur-sm rounded-2xl">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-6">
+                <div className="relative mx-auto sm:mx-0">
+                  <Avatar className="h-28 w-28 ring-4 ring-white shadow-xl">
+                    <AvatarImage 
+                      src={profileImagePreview || user.profileImage || ""} 
+                      alt={user.name} 
+                    />
+                    <AvatarFallback className="text-2xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white">
+                      {user.name.split(" ").map(n => n[0]).join("").toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  
+                  {(profileImagePreview || user.profileImage) && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="absolute -top-1 -right-1 h-8 w-8 rounded-full p-0 bg-white/90 border-2 border-red-200 hover:border-red-300 hover:bg-red-50 shadow-lg backdrop-blur-sm transition-all duration-200 group"
+                      onClick={removeProfileImage}
+                      title="Remove profile picture"
+                    >
+                      <X className="h-4 w-4 text-red-500 group-hover:text-red-600 transition-colors" />
+                    </Button>
+                  )}
+                </div>
                 
-                {(profileImagePreview || user.profileImage) && (
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    size="sm"
-                    className="absolute -top-2 -right-2 h-6 w-6 rounded-full p-0"
-                    onClick={removeProfileImage}
-                  >
-                    <X className="h-3 w-3" />
-                  </Button>
-                )}
-              </div>
-              
-              <div className="flex-1">
-                <h2 className="text-2xl font-semibold text-gray-900">{user.name}</h2>
-                <p className="text-gray-600 mb-2">{user.profession} • Batch {user.batchYear}</p>
-                <div className="flex items-center space-x-4 text-sm text-gray-500">
-                  <div className="flex items-center space-x-1">
-                    <MapPin className="h-4 w-4" />
-                    <span>{user.state}, {user.district}</span>
-                  </div>
-                  {user.email && (
-                    <div className="flex items-center space-x-1">
-                      <Mail className="h-4 w-4" />
-                      <span>{user.email}</span>
+                <div className="flex-1 text-center sm:text-left">
+                  <h2 className="text-3xl font-bold bg-gradient-to-r from-gray-800 to-gray-600 bg-clip-text text-transparent mb-2">{user.name}</h2>
+                  <p className="text-gray-600 mb-4 text-lg">{user.profession} • Batch {user.batchYear}</p>
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-3 text-sm text-gray-600 mb-4">
+                    <div className="flex items-center justify-center sm:justify-start space-x-2">
+                      <div className="w-8 h-8 bg-gradient-to-br from-blue-100 to-indigo-100 rounded-lg flex items-center justify-center">
+                        <MapPin className="h-4 w-4 text-blue-600" />
+                      </div>
+                      <span>{user.state}, {user.district}</span>
                     </div>
-                  )}
-                </div>
-                
-                <div className="flex items-center space-x-2 mt-3">
-                  {user.isExpert && (
-                    <Badge className="bg-secondary text-secondary-foreground">
-                      <CheckCircle className="h-3 w-3 mr-1" />
-                      Expert
+                    {user.email && (
+                      <div className="flex items-center justify-center sm:justify-start space-x-2">
+                        <div className="w-8 h-8 bg-gradient-to-br from-green-100 to-emerald-100 rounded-lg flex items-center justify-center">
+                          <Mail className="h-4 w-4 text-green-600" />
+                        </div>
+                        <span>{user.email}</span>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="flex items-center justify-center sm:justify-start space-x-3">
+                    {user.isExpert && (
+                      <Badge className="bg-gradient-to-r from-green-600 to-emerald-600 text-white px-3 py-1 rounded-full shadow-sm">
+                        <CheckCircle className="h-3 w-3 mr-1" />
+                        Expert
+                      </Badge>
+                    )}
+                    <Badge className="bg-gradient-to-r from-blue-100 to-indigo-100 text-blue-700 border-blue-200 px-3 py-1 rounded-full">
+                      {user.phone ? "✓ Verified" : "⚠ Unverified"}
                     </Badge>
-                  )}
-                  <Badge variant="outline">
-                    {user.phone ? "Verified" : "Unverified"}
-                  </Badge>
+                  </div>
                 </div>
               </div>
-            </div>
-          </CardContent>
+            </CardContent>
+          </div>
         </Card>
 
         {/* Profile Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="profile">
-              <User className="h-4 w-4 mr-2" />
-              Personal Info
-            </TabsTrigger>
-            <TabsTrigger value="expert">
-              <Star className="h-4 w-4 mr-2" />
-              Help Settings
-            </TabsTrigger>
-            <TabsTrigger value="account">
-              <Settings className="h-4 w-4 mr-2" />
-              Account
-            </TabsTrigger>
-          </TabsList>
+          <div className="flex justify-center mb-8">
+            <TabsList className="inline-flex h-12 items-center justify-center w-full max-w-md bg-white/60 backdrop-blur-sm border border-gray-200/50 shadow-lg rounded-2xl p-1 gap-1">
+              <TabsTrigger 
+                value="profile"
+                className="flex items-center justify-center space-x-2 rounded-xl data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-600 data-[state=active]:to-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-lg transition-all duration-300 hover:bg-gray-50 font-medium py-3 px-4 flex-1 min-h-[40px] flex-shrink-0 whitespace-nowrap"
+              >
+                <User className="h-4 w-4" />
+                <span>Personal Info</span>
+              </TabsTrigger>
+              <TabsTrigger 
+                value="account"
+                className="flex items-center justify-center space-x-2 rounded-xl data-[state=active]:bg-gradient-to-r data-[state=active]:from-purple-600 data-[state=active]:to-violet-600 data-[state=active]:text-white data-[state=active]:shadow-lg transition-all duration-300 hover:bg-gray-50 font-medium py-3 px-4 flex-1 min-h-[40px] flex-shrink-0 whitespace-nowrap"
+              >
+                <Settings className="h-4 w-4" />
+                <span>Account</span>
+              </TabsTrigger>
+            </TabsList>
+          </div>
 
           {/* Personal Information Tab */}
-          <TabsContent value="profile" className="mt-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Personal Information</CardTitle>
+          <TabsContent value="profile" className="mt-0">
+            <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm rounded-2xl overflow-hidden">
+              <CardHeader className="bg-gradient-to-r from-blue-50/80 to-indigo-50/80 border-b border-gray-100/50">
+                <CardTitle className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent flex items-center gap-3">
+                  <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center">
+                    <User className="h-4 w-4 text-white" />
+                  </div>
+                  Personal Information
+                </CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="p-8">
                 <Form {...form}>
                   <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-                    <div className="space-y-4">
-                      <h3 className="text-lg font-medium">Profile Picture</h3>
-                      <div className="flex items-center space-x-6">
-                        <div className="relative">
-                          <Avatar className="h-20 w-20">
+                    <div className="space-y-6">
+                      <div className="space-y-3">
+                        <h3 className="text-xl font-semibold bg-gradient-to-r from-gray-800 to-gray-600 bg-clip-text text-transparent flex items-center gap-2">
+                          <Camera className="h-5 w-5 text-blue-600" />
+                          Profile Picture
+                        </h3>
+                        <p className="text-gray-600">Upload a professional photo to help others recognize you</p>
+                      </div>
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-6 p-6 bg-gradient-to-r from-gray-50/50 to-blue-50/30 rounded-xl border border-gray-100/50">
+                        <div className="relative mx-auto sm:mx-0">
+                          <Avatar className="h-24 w-24 ring-4 ring-white shadow-lg">
                             <AvatarImage 
                               src={profileImagePreview || user.profileImage || ""} 
                               alt={user.name} 
                             />
-                            <AvatarFallback className="text-lg">
+                            <AvatarFallback className="text-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white">
                               {user.name.split(" ").map(n => n[0]).join("").toUpperCase()}
                             </AvatarFallback>
                           </Avatar>
@@ -352,25 +372,29 @@ export default function Profile() {
                           {(profileImagePreview || user.profileImage) && (
                             <Button
                               type="button"
-                              variant="destructive"
+                              variant="outline"
                               size="sm"
-                              className="absolute -top-2 -right-2 h-6 w-6 rounded-full p-0"
+                              className="absolute -top-1 -right-1 h-8 w-8 rounded-full p-0 bg-white/90 border-2 border-red-200 hover:border-red-300 hover:bg-red-50 shadow-lg backdrop-blur-sm transition-all duration-200 group"
                               onClick={removeProfileImage}
+                              title="Remove profile picture"
                             >
-                              <X className="h-3 w-3" />
+                              <X className="h-4 w-4 text-red-500 group-hover:text-red-600 transition-colors" />
                             </Button>
                           )}
                         </div>
                         
-                        <div className="flex-1">
-                          <div className="flex items-center space-x-4">
-                            <Label htmlFor="profile-image-upload-settings">
-                              <Button type="button" variant="outline" className="cursor-pointer">
-                                <Upload className="h-4 w-4 mr-2" />
-                                Upload Photo
-                              </Button>
-                            </Label>
+                        <div className="flex-1 text-center sm:text-left">
+                          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                            <Button 
+                              type="button" 
+                              onClick={() => fileInputRef.current?.click()}
+                              className="cursor-pointer bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-6 py-2 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200"
+                            >
+                              <Upload className="h-4 w-4 mr-2" />
+                              Upload New Photo
+                            </Button>
                             <Input
+                              ref={fileInputRef}
                               id="profile-image-upload-settings"
                               type="file"
                               accept="image/*"
@@ -378,15 +402,21 @@ export default function Profile() {
                               className="hidden"
                             />
                           </div>
-                          <p className="text-sm text-gray-500 mt-2">
-                            JPG, PNG, GIF or WebP. Max size 5MB.
+                          <p className="text-sm text-gray-600 mt-3 leading-relaxed">
+                            JPG, PNG, GIF or WebP • Maximum size 5MB • Recommended: 400×400px
                           </p>
                         </div>
                       </div>
                     </div>
 
-                    <div className="space-y-4">
-                      <h3 className="text-lg font-medium">Basic Information</h3>
+                    <div className="space-y-6">
+                      <div className="space-y-3">
+                        <h3 className="text-xl font-semibold bg-gradient-to-r from-gray-800 to-gray-600 bg-clip-text text-transparent flex items-center gap-2">
+                          <User className="h-5 w-5 text-blue-600" />
+                          Basic Information
+                        </h3>
+                        <p className="text-gray-600">Essential details about yourself</p>
+                      </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <FormField
                         control={form.control}
@@ -470,19 +500,25 @@ export default function Profile() {
                     </div>
                     </div>
 
-                    <div className="space-y-4">
-                      <h3 className="text-lg font-medium">JNV Location</h3>
+                    <div className="space-y-6">
+                      <div className="space-y-3">
+                        <h3 className="text-xl font-semibold bg-gradient-to-r from-gray-800 to-gray-600 bg-clip-text text-transparent flex items-center gap-2">
+                          <GraduationCap className="h-5 w-5 text-blue-600" />
+                          JNV Location
+                        </h3>
+                        <p className="text-gray-600">Which Jawahar Navodaya Vidyalaya did you attend?</p>
+                      </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <FormField
                           control={form.control}
                           name="state"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel>State*</FormLabel>
+                              <FormLabel>JNV State</FormLabel>
                               <Select onValueChange={field.onChange} value={field.value || ""}>
                                 <FormControl>
                                   <SelectTrigger>
-                                    <SelectValue placeholder="Select your state" />
+                                    <SelectValue placeholder="Select your JNV state" />
                                   </SelectTrigger>
                                 </FormControl>
                                 <SelectContent>
@@ -503,11 +539,11 @@ export default function Profile() {
                           name="district"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel>District*</FormLabel>
+                              <FormLabel>JNV District</FormLabel>
                               <Select onValueChange={field.onChange} value={field.value || ""} disabled={!form.watch("state")}>
                                 <FormControl>
                                   <SelectTrigger>
-                                    <SelectValue placeholder={form.watch("state") ? "Select your district" : "Select state first"} />
+                                    <SelectValue placeholder={form.watch("state") ? "Select your JNV district" : "Select state first"} />
                                   </SelectTrigger>
                                 </FormControl>
                                 <SelectContent>
@@ -566,8 +602,14 @@ export default function Profile() {
                       />
                     )}
 
-                    <div className="space-y-4">
-                      <h3 className="text-lg font-medium">Current Residential Address</h3>
+                    <div className="space-y-6">
+                      <div className="space-y-3">
+                        <h3 className="text-xl font-semibold bg-gradient-to-r from-gray-800 to-gray-600 bg-clip-text text-transparent flex items-center gap-2">
+                          <MapPin className="h-5 w-5 text-blue-600" />
+                          Current Residential Address
+                        </h3>
+                        <p className="text-gray-600">Where do you currently live?</p>
+                      </div>
                       <div className="flex items-center justify-between mb-4">
                         <p className="text-sm text-gray-600">
                           Enter your current residential address (where you live now)
@@ -693,240 +735,198 @@ export default function Profile() {
                       )}
                     />
 
-                    <Button type="submit" disabled={updateProfileMutation.isPending}>
-                      {updateProfileMutation.isPending ? "Saving..." : "Save Changes"}
-                    </Button>
-                  </form>
-                </Form>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Help Settings Tab */}
-          <TabsContent value="expert" className="mt-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Help Settings</CardTitle>
-                <p className="text-gray-600 text-sm">
-                  Configure how you can help and support fellow alumni in the community.
-                </p>
-              </CardHeader>
-              <CardContent>
-                <Form {...form}>
-                  <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-                    <FormField
-                      control={form.control}
-                      name="isExpert"
-                      render={({ field }) => (
-                        <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
-                          <FormControl>
-                            <Checkbox
-                              checked={field.value}
-                              onCheckedChange={field.onChange}
-                            />
-                          </FormControl>
-                          <div className="space-y-1 leading-none">
-                            <FormLabel>
-                              I want to help others and provide support
-                            </FormLabel>
-                            <FormDescription>
-                              Enable this to receive help requests from fellow alumni and share your knowledge and experience.
-                            </FormDescription>
+                    <div className="flex justify-center pt-6">
+                      <Button 
+                        type="submit" 
+                        disabled={updateProfileMutation.isPending}
+                        className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-8 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 min-w-[200px]"
+                      >
+                        {updateProfileMutation.isPending ? (
+                          <div className="flex items-center gap-2">
+                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                            Saving Changes...
                           </div>
-                        </FormItem>
-                      )}
-                    />
-
-                    {form.watch("isExpert") && (
-                      <>
-                        <FormField
-                          control={form.control}
-                          name="helpAreas"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Which areas could you provide help and support?</FormLabel>
-                              <FormDescription className="mb-4">
-                                Select one or more areas where you can provide guidance, advice, or support. You can help in multiple areas.
-                              </FormDescription>
-                              <div className="space-y-2">
-                                {HELP_AREAS_CATEGORIES.map((option) => (
-                                  <div key={option} className="flex items-center space-x-2">
-                                    <Checkbox
-                                      id={option}
-                                      checked={field.value?.includes(option) || false}
-                                      onCheckedChange={(checked) => {
-                                        const currentValues = field.value || [];
-                                        if (checked) {
-                                          field.onChange([...currentValues, option]);
-                                        } else {
-                                          field.onChange(currentValues.filter(value => value !== option));
-                                        }
-                                      }}
-                                    />
-                                    <label htmlFor={option} className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                                      {option}
-                                    </label>
-                                  </div>
-                                ))}
-                              </div>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-
-                        {form.watch("helpAreas")?.includes("Other") && (
-                          <FormField
-                            control={form.control}
-                            name="helpAreasOther"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Please specify other areas where you can help</FormLabel>
-                                <FormControl>
-                                  <Input placeholder="Enter details about other areas where you can provide help" {...field} />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
+                        ) : (
+                          "Save Changes"
                         )}
-
-                        <FormField
-                          control={form.control}
-                          name="dailyRequestLimit"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Daily Request Limit</FormLabel>
-                              <Select onValueChange={(value) => field.onChange(parseInt(value))}>
-                                <FormControl>
-                                  <SelectTrigger>
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                  {[1, 2, 3, 4, 5].map((limit) => (
-                                    <SelectItem key={limit} value={limit.toString()}>
-                                      {limit} request{limit > 1 ? "s" : ""} per day
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                              <FormDescription>
-                                Set how many help requests you want to handle per day.
-                              </FormDescription>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-
-                        <FormField
-                          control={form.control}
-                          name="phoneVisible"
-                          render={({ field }) => (
-                            <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
-                              <FormControl>
-                                <Checkbox
-                                  checked={field.value || false}
-                                  onCheckedChange={field.onChange}
-                                />
-                              </FormControl>
-                              <div className="space-y-1 leading-none">
-                                <FormLabel>
-                                  Make my phone number visible for direct contact
-                                </FormLabel>
-                                <FormDescription>
-                                  This allows users to contact you directly via WhatsApp for follow-up support.
-                                </FormDescription>
-                              </div>
-                            </FormItem>
-                          )}
-                        />
-
-                        <FormField
-                          control={form.control}
-                          name="upiId"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>UPI ID (for gratitude payments)</FormLabel>
-                              <FormControl>
-                                <Input placeholder="yourname@paytm" {...field} />
-                              </FormControl>
-                              <FormDescription>
-                                Users can send token payments to show gratitude for your help (optional).
-                              </FormDescription>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </>
-                    )}
-
-                    <Button type="submit" disabled={updateProfileMutation.isPending}>
-                      {updateProfileMutation.isPending ? "Saving..." : "Save Help Settings"}
-                    </Button>
+                      </Button>
+                    </div>
                   </form>
                 </Form>
               </CardContent>
             </Card>
           </TabsContent>
+
 
           {/* Account Tab */}
-          <TabsContent value="account" className="mt-6">
-            <div className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Account Information</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex items-center justify-between py-3 border-b">
-                    <div>
-                      <h4 className="font-medium">Phone Number</h4>
-                      <p className="text-sm text-gray-600">{user.phone}</p>
+          <TabsContent value="account" className="mt-0">
+            <div className="space-y-8">
+              <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm rounded-2xl overflow-hidden">
+                <CardHeader className="bg-gradient-to-r from-purple-50/80 to-violet-50/80 border-b border-gray-100/50">
+                  <CardTitle className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-violet-600 bg-clip-text text-transparent flex items-center gap-3">
+                    <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-violet-600 rounded-lg flex items-center justify-center">
+                      <Settings className="h-4 w-4 text-white" />
                     </div>
-                    <Badge variant="outline">Verified</Badge>
+                    Privacy & Payment Settings
+                  </CardTitle>
+                  <p className="text-gray-600 text-base leading-relaxed">
+                    Manage your contact preferences and payment information.
+                  </p>
+                </CardHeader>
+                <CardContent className="p-8">
+                  <Form {...form}>
+                    <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+                      <FormField
+                        control={form.control}
+                        name="phoneVisible"
+                        render={({ field }) => (
+                          <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
+                            <FormControl>
+                              <Checkbox
+                                checked={field.value || false}
+                                onCheckedChange={field.onChange}
+                              />
+                            </FormControl>
+                            <div className="space-y-1 leading-none">
+                              <FormLabel>
+                                Make my phone number visible for direct contact
+                              </FormLabel>
+                              <FormDescription>
+                                This allows users to contact you directly via WhatsApp when you help them.
+                              </FormDescription>
+                            </div>
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="upiId"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>UPI ID (for gratitude payments)</FormLabel>
+                            <FormControl>
+                              <Input placeholder="yourname@paytm" {...field} value={field.value || ""} />
+                            </FormControl>
+                            <FormDescription>
+                              Users can send token payments to show gratitude for your help (optional).
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <div className="flex justify-center pt-6">
+                        <Button 
+                          type="submit" 
+                          disabled={updateProfileMutation.isPending}
+                          className="bg-gradient-to-r from-purple-600 to-violet-600 hover:from-purple-700 hover:to-violet-700 text-white px-8 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 min-w-[200px]"
+                        >
+                          {updateProfileMutation.isPending ? (
+                            <div className="flex items-center gap-2">
+                              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                              Saving Settings...
+                            </div>
+                          ) : (
+                            "Save Settings"
+                          )}
+                        </Button>
+                      </div>
+                    </form>
+                  </Form>
+                </CardContent>
+              </Card>
+
+              <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm rounded-2xl overflow-hidden">
+                <CardHeader className="bg-gradient-to-r from-indigo-50/80 to-blue-50/80 border-b border-gray-100/50">
+                  <CardTitle className="text-2xl font-bold bg-gradient-to-r from-indigo-600 to-blue-600 bg-clip-text text-transparent flex items-center gap-3">
+                    <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-lg flex items-center justify-center">
+                      <User className="h-4 w-4 text-white" />
+                    </div>
+                    Account Information
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-8 space-y-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-5 bg-gradient-to-r from-green-50/50 to-emerald-50/50 rounded-xl border border-green-100/50">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-600 rounded-lg flex items-center justify-center">
+                        <Phone className="h-5 w-5 text-white" />
+                      </div>
+                      <div>
+                        <h4 className="font-semibold text-gray-800">Phone Number</h4>
+                        <p className="text-gray-600">{user.phone}</p>
+                      </div>
+                    </div>
+                    <Badge className="bg-gradient-to-r from-green-600 to-emerald-600 text-white px-3 py-1 rounded-full shadow-sm">✓ Verified</Badge>
                   </div>
                   
-                  <div className="flex items-center justify-between py-3 border-b">
-                    <div>
-                      <h4 className="font-medium">Account Status</h4>
-                      <p className="text-sm text-gray-600">
-                        {user.isActive ? "Active" : "Inactive"}
-                      </p>
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-5 bg-gradient-to-r from-blue-50/50 to-indigo-50/50 rounded-xl border border-blue-100/50">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center">
+                        <CheckCircle className="h-5 w-5 text-white" />
+                      </div>
+                      <div>
+                        <h4 className="font-semibold text-gray-800">Account Status</h4>
+                        <p className="text-gray-600">
+                          {user.isActive ? "Your account is active and ready to use" : "Account is currently inactive"}
+                        </p>
+                      </div>
                     </div>
-                    <Badge variant={user.isActive ? "default" : "secondary"}>
+                    <Badge className={`px-3 py-1 rounded-full shadow-sm ${
+                      user.isActive 
+                        ? "bg-gradient-to-r from-green-600 to-emerald-600 text-white" 
+                        : "bg-gradient-to-r from-gray-400 to-gray-500 text-white"
+                    }`}>
                       {user.isActive ? "Active" : "Inactive"}
                     </Badge>
                   </div>
 
-                  <div className="flex items-center justify-between py-3">
-                    <div>
-                      <h4 className="font-medium">Member Since</h4>
-                      <p className="text-sm text-gray-600">
-                        {new Date(user.createdAt!).toLocaleDateString("en-US", {
-                          year: "numeric",
-                          month: "long",
-                          day: "numeric",
-                        })}
-                      </p>
+                  <div className="p-5 bg-gradient-to-r from-purple-50/50 to-violet-50/50 rounded-xl border border-purple-100/50">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-violet-600 rounded-lg flex items-center justify-center">
+                        <Heart className="h-5 w-5 text-white" />
+                      </div>
+                      <div>
+                        <h4 className="font-semibold text-gray-800">Member Since</h4>
+                        <p className="text-gray-600">
+                          {(() => {
+                            try {
+                              const date = user.createdAt ? new Date(user.createdAt) : null;
+                              if (!date || isNaN(date.getTime())) {
+                                return "Recently joined";
+                              }
+                              return date.toLocaleDateString("en-US", {
+                                year: "numeric",
+                                month: "long",
+                                day: "numeric",
+                              });
+                            } catch (error) {
+                              return "Recently joined";
+                            }
+                          })()}
+                        </p>
+                      </div>
                     </div>
+                    <p className="text-sm text-purple-600 font-medium ml-13">Thank you for being part of the Navodaya Connect community!</p>
                   </div>
-                </CardContent>
-              </Card>
 
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-red-600">Danger Zone</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div>
-                      <h4 className="font-medium mb-2">Sign Out</h4>
-                      <p className="text-sm text-gray-600 mb-4">
-                        Sign out of your account on this device.
-                      </p>
-                      <Button variant="outline" onClick={() => logout()}>
-                        Sign Out
-                      </Button>
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-5 bg-gradient-to-r from-red-50/50 to-pink-50/50 rounded-xl border border-red-100/50">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-gradient-to-br from-red-500 to-pink-600 rounded-lg flex items-center justify-center">
+                        <LogOut className="h-5 w-5 text-white" />
+                      </div>
+                      <div>
+                        <h4 className="font-semibold text-gray-800">Account Actions</h4>
+                        <p className="text-gray-600">Sign out of your account on this device</p>
+                      </div>
                     </div>
+                    <Button 
+                      onClick={() => logout()}
+                      className="bg-gradient-to-r from-red-600 to-pink-600 hover:from-red-700 hover:to-pink-700 text-white px-6 py-2 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200"
+                    >
+                      <LogOut className="h-4 w-4 mr-2" />
+                      Sign Out
+                    </Button>
                   </div>
                 </CardContent>
               </Card>

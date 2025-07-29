@@ -77,7 +77,7 @@ export default function MyRequests() {
   const updateRequestMutation = useMutation({
     mutationFn: async ({ id, title, description }: { id: number; title: string; description: string }) => {
       const response = await apiRequest("PUT", `/api/requests/${id}`, { title, description });
-      return response.json();
+      return response;
     },
     onSuccess: () => {
       toast({

@@ -24,7 +24,8 @@ import {
   Gift,
   AlertTriangle,
   User,
-  CheckCircle
+  CheckCircle,
+  X
 } from "lucide-react";
 import type { RequestWithUser, ResponseWithExpert, Review } from "@shared/schema";
 
@@ -51,14 +52,23 @@ export default function RequestDetail() {
   const markHelpfulMutation = useMutation({
     mutationFn: async (responseId: number) => {
       const response = await apiRequest("POST", `/api/responses/${responseId}/helpful`);
-      return response.json();
+      return response;
     },
     onSuccess: () => {
       toast({
-        title: "Response marked as helpful!",
-        description: "Thank you for your feedback.",
+        title: "👍 Response Marked Helpful!",
+        description: "Thank you for your feedback! This helps other users identify valuable responses.",
+        duration: 4000,
+        className: "border-blue-200 bg-blue-50 text-blue-800",
       });
       queryClient.invalidateQueries({ queryKey: [`/api/responses/request/${requestId}`] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to mark as helpful",
+        description: error.message || "Please try again.",
+        variant: "destructive",
+      });
     },
   });
 
@@ -67,15 +77,41 @@ export default function RequestDetail() {
       const response = await apiRequest("POST", `/api/requests/${requestId}/best-response`, {
         responseId: responseId
       });
-      return response.json();
+      return response;
     },
     onSuccess: () => {
       toast({
-        title: "Best response marked!",
-        description: "Thank you for marking the best response. Your request has been resolved.",
+        title: "🏆 Best Response Marked!",
+        description: "Thank you for selecting the best response! Your request has been resolved and the expert will be notified.",
+        duration: 6000,
+        className: "border-green-200 bg-green-50 text-green-800",
       });
       queryClient.invalidateQueries({ queryKey: [`/api/requests/${requestId}`] });
       queryClient.invalidateQueries({ queryKey: [`/api/responses/request/${requestId}`] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to mark best response",
+        description: error.message || "Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const closeRequestMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("PUT", `/api/requests/${requestId}/status`, {
+        status: "closed"
+      });
+      return response;
+    },
+    onSuccess: () => {
+      toast({
+        title: "Request closed successfully!",
+        description: "Your request has been marked as closed. You can still view responses but no new responses will be accepted.",
+      });
+      queryClient.invalidateQueries({ queryKey: [`/api/requests/${requestId}`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/requests"] });
     },
   });
 
@@ -87,7 +123,7 @@ export default function RequestDetail() {
         rating: data.rating,
         comment: data.comment
       });
-      return response.json();
+      return response;
     },
     onSuccess: () => {
       toast({
@@ -95,13 +131,16 @@ export default function RequestDetail() {
         description: "Thank you for rating this response.",
       });
       queryClient.invalidateQueries({ queryKey: [`/api/responses/request/${requestId}`] });
+      // Invalidate notification queries to update notification counts
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications/count"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
     },
   });
 
   const createReviewMutation = useMutation({
     mutationFn: async (data: { requestId: number; expertId: number; rating: number; comment?: string }) => {
       const response = await apiRequest("POST", "/api/reviews", data);
-      return response.json();
+      return response;
     },
     onSuccess: () => {
       toast({
@@ -149,7 +188,8 @@ export default function RequestDetail() {
 
   const isUrgent = request.urgency === "urgent" || request.urgency === "critical";
   const isResolved = request.status === "resolved";
-  const canRespond = user && !isResolved; // Allow both experts and request owners to respond
+  const isClosed = request.status === "closed";
+  const canRespond = user && !isResolved && !isClosed; // Allow both experts and request owners to respond
   const isRequestOwner = user && request.userId === user.id;
 
   const handleWhatsAppContact = (expert: ResponseWithExpert["expert"]) => {
@@ -248,6 +288,61 @@ export default function RequestDetail() {
             <div className="bg-gray-50 rounded-lg p-4 mb-6">
               <p className="text-gray-700">{request.description}</p>
             </div>
+
+            {/* Attachments */}
+            {request.attachments && request.attachments.length > 0 && (
+              <div className="mb-6">
+                <h4 className="font-semibold text-gray-900 mb-3">Attachments</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {request.attachments.map((attachment, index) => {
+                    const isImage = attachment.match(/\.(jpg|jpeg|png|gif|webp)$/i);
+                    const fileName = attachment.split('/').pop() || 'Attachment';
+                    
+                    console.log('Attachment debug:', { attachment, isImage, fileName });
+                    
+                    return (
+                      <div key={index} className="border rounded-lg overflow-hidden">
+                        {isImage ? (
+                          <div className="aspect-video bg-gray-100">
+                            <img
+                              src={attachment}
+                              alt={`Attachment ${index + 1}`}
+                              className="w-full h-full object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                              onClick={() => window.open(attachment, '_blank')}
+                              onError={(e) => {
+                                console.error('Image failed to load:', attachment, e);
+                              }}
+                              onLoad={() => {
+                                console.log('Image loaded successfully:', attachment);
+                              }}
+                            />
+                          </div>
+                        ) : (
+                          <div className="aspect-video bg-gray-50 flex items-center justify-center">
+                            <div className="text-center p-4">
+                              <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mx-auto mb-2">
+                                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                              </div>
+                              <p className="text-sm text-gray-600 font-medium truncate">{fileName}</p>
+                            </div>
+                          </div>
+                        )}
+                        <div className="p-3 bg-white">
+                          <button
+                            onClick={() => window.open(attachment, '_blank')}
+                            className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                          >
+                            {isImage ? 'View Image' : 'Download File'}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             
             <div className="mb-6">
               <h4 className="font-semibold text-gray-900 mb-3">Expertise Required</h4>
@@ -264,12 +359,26 @@ export default function RequestDetail() {
                   {responses.length} Response{responses.length !== 1 ? "s" : ""}
                 </span>
               </div>
-              <Badge 
-                variant={isResolved ? "default" : "secondary"}
-                className={isResolved ? "bg-secondary text-secondary-foreground" : ""}
-              >
-                {isResolved ? "Resolved" : "Open"}
-              </Badge>
+              <div className="flex items-center space-x-3">
+                {isRequestOwner && !isResolved && !isClosed && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => closeRequestMutation.mutate()}
+                    disabled={closeRequestMutation.isPending}
+                    className="text-gray-600 hover:text-gray-800 border-gray-300"
+                  >
+                    <X className="h-4 w-4 mr-1" />
+                    {closeRequestMutation.isPending ? "Closing..." : "Close Request"}
+                  </Button>
+                )}
+                <Badge 
+                  variant={isResolved ? "default" : isClosed ? "destructive" : "secondary"}
+                  className={isResolved ? "bg-secondary text-secondary-foreground" : isClosed ? "bg-red-100 text-red-700" : ""}
+                >
+                  {isResolved ? "Resolved" : isClosed ? "Closed" : "Open"}
+                </Badge>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -314,10 +423,20 @@ export default function RequestDetail() {
                             variant="ghost"
                             size="sm"
                             onClick={() => markHelpfulMutation.mutate(response.id)}
-                            className="text-primary hover:text-primary flex items-center space-x-1"
+                            disabled={markHelpfulMutation.isPending}
+                            className="text-primary hover:text-primary flex items-center space-x-1 relative"
                           >
-                            <ThumbsUp className="h-3 w-3" />
-                            <span>Helpful ({response.helpfulCount || 0})</span>
+                            {markHelpfulMutation.isPending ? (
+                              <>
+                                <div className="animate-spin h-3 w-3 border-2 border-primary border-t-transparent rounded-full"></div>
+                                <span>Helpful ({response.helpfulCount || 0})</span>
+                              </>
+                            ) : (
+                              <>
+                                <ThumbsUp className="h-3 w-3" />
+                                <span>Helpful ({response.helpfulCount || 0})</span>
+                              </>
+                            )}
                           </Button>
                           
                           <Button
@@ -342,6 +461,8 @@ export default function RequestDetail() {
                           onRateResponse={handleResponseRating}
                           onMarkBestResponse={handleBestResponse}
                           onPayGratitude={() => handleGratitudePayment(response.expert)}
+                          isMarkingBest={markBestResponseMutation.isPending}
+                          isRatingLoading={createResponseReviewMutation.isPending}
                         />
                       </div>
                     </div>
@@ -376,8 +497,9 @@ export default function RequestDetail() {
               <ResponseForm 
                 requestId={request.id}
                 isRequestOwner={isRequestOwner}
+                isRequestOpen={!isResolved && !isClosed}
                 onSuccess={() => {
-                  queryClient.invalidateQueries({ queryKey: ["/api/responses/request", requestId] });
+                  queryClient.invalidateQueries({ queryKey: [`/api/responses/request/${requestId}`] });
                 }}
               />
             </CardContent>

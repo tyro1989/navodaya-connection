@@ -10,13 +10,16 @@ export function configureAuth() {
     { usernameField: 'phone' },
     async (phone: string, password: string, done) => {
       try {
+        console.log("LocalStrategy verifying:", { phone, passwordLength: password?.length });
         const user = await storage.verifyUserPassword(phone, password);
+        console.log("Password verification result:", user ? "SUCCESS" : "FAILED");
         if (user) {
           return done(null, user);
         } else {
           return done(null, false, { message: 'Invalid phone or password' });
         }
       } catch (error) {
+        console.error("LocalStrategy error:", error);
         return done(error);
       }
     }

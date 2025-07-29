@@ -5,9 +5,9 @@ import { z } from "zod";
 
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
-  email: text("email").notNull().unique(),
+  email: text("email"),
   name: text("name").notNull(),
-  phone: text("phone"),
+  phone: text("phone").unique(),
   // Social authentication fields
   googleId: text("google_id"),
   facebookId: text("facebook_id"),
@@ -19,12 +19,12 @@ export const users = pgTable("users", {
   
   gender: text("gender"), // 'male', 'female', 'other', 'prefer-not-to-say'
   batchYear: integer("batch_year").notNull(),
-  profession: text("profession").notNull(),
+  profession: text("profession"),
   professionOther: text("profession_other"),
   state: text("state").notNull(),
   district: text("district").notNull(),
-  currentState: text("current_state"),
-  currentDistrict: text("current_district"),
+  // currentState: text("current_state"),
+  // currentDistrict: text("current_district"),
   pinCode: text("pin_code"),
   gpsLocation: text("gps_location"),
   gpsEnabled: boolean("gps_enabled").default(false),
@@ -128,6 +128,28 @@ export const emailVerifications = pgTable("email_verifications", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const otpVerifications = pgTable("otp_verifications", {
+  id: serial("id").primaryKey(),
+  phone: text("phone").notNull(),
+  otp: text("otp").notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  verified: boolean("verified").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const notifications = pgTable("notifications", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  type: text("type").notNull(), // 'response', 'response_rating', 'message', 'request_resolved'
+  title: text("title").notNull(),
+  message: text("message").notNull(),
+  entityType: text("entity_type"), // 'request', 'response', 'message'
+  entityId: integer("entity_id"), // ID of the related entity
+  actionUserId: integer("action_user_id").references(() => users.id), // User who performed the action
+  isRead: boolean("is_read").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
@@ -172,13 +194,19 @@ export const insertEmailVerificationSchema = createInsertSchema(emailVerificatio
   verified: true,
 });
 
+export const insertOtpVerificationSchema = createInsertSchema(otpVerifications).omit({
+  id: true,
+  createdAt: true,
+  verified: true,
+});
+
 // Auth schemas
 export const emailSignupSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
   password: z.string().min(8, "Password must be at least 8 characters"),
   name: z.string().min(1, "Name is required"),
   batchYear: z.number().min(1990).max(new Date().getFullYear()),
-  profession: z.string().min(1, "Profession is required"),
+  profession: z.string().optional(),
   state: z.string().min(1, "State is required"),
   district: z.string().min(1, "District is required"),
 });
@@ -189,6 +217,11 @@ export const emailLoginSchema = z.object({
 });
 
 export const insertPrivateMessageSchema = createInsertSchema(privateMessages).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertNotificationSchema = createInsertSchema(notifications).omit({
   id: true,
   createdAt: true,
 });
@@ -206,6 +239,9 @@ export type InsertResponse = z.infer<typeof insertResponseSchema>;
 export type PrivateMessage = typeof privateMessages.$inferSelect;
 export type InsertPrivateMessage = z.infer<typeof insertPrivateMessageSchema>;
 
+export type Notification = typeof notifications.$inferSelect;
+export type InsertNotification = z.infer<typeof insertNotificationSchema>;
+
 export type Review = typeof reviews.$inferSelect;
 export type InsertReview = z.infer<typeof insertReviewSchema>;
 
@@ -216,6 +252,9 @@ export type ExpertStats = typeof expertStats.$inferSelect;
 
 export type EmailVerification = typeof emailVerifications.$inferSelect;
 export type InsertEmailVerification = z.infer<typeof insertEmailVerificationSchema>;
+
+export type OtpVerification = typeof otpVerifications.$inferSelect;
+export type InsertOtpVerification = z.infer<typeof insertOtpVerificationSchema>;
 
 // Auth types
 export type EmailSignup = z.infer<typeof emailSignupSchema>;
@@ -244,12 +283,17 @@ export type ExpertWithStats = User & {
   availableSlots?: number;
 };
 
+export type NotificationWithUser = Notification & {
+  actionUser?: Pick<User, 'id' | 'name' | 'profession' | 'profileImage'>;
+};
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
   requests: many(requests),
   responses: many(responses),
   reviews: many(reviews),
   stats: many(expertStats),
+  notifications: many(notifications),
 }));
 
 export const requestsRelations = relations(requests, ({ one, many }) => ({
@@ -319,6 +363,17 @@ export const responseReviewsRelations = relations(responseReviews, ({ one }) => 
 export const expertStatsRelations = relations(expertStats, ({ one }) => ({
   expert: one(users, {
     fields: [expertStats.expertId],
+    references: [users.id],
+  }),
+}));
+
+export const notificationsRelations = relations(notifications, ({ one }) => ({
+  user: one(users, {
+    fields: [notifications.userId],
+    references: [users.id],
+  }),
+  actionUser: one(users, {
+    fields: [notifications.actionUserId],
     references: [users.id],
   }),
 }));
