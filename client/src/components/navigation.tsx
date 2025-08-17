@@ -211,7 +211,16 @@ export default function Navigation() {
                       {user.name.split(" ").map(n => n[0]).join("").toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
-                  <span className="hidden sm:block text-sm font-medium">{user.name}</span>
+                  <div className="hidden sm:flex items-center space-x-2">
+                    <span className="text-sm font-medium">{user.name}</span>
+                    {user.phoneVerified === true && (
+                      <div className="flex items-center">
+                        <div className="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
+                          <Check className="h-3 w-3 text-white" />
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">

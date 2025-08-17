@@ -16,6 +16,7 @@ export const users = pgTable("users", {
   // Optional password field for email signups
   password: text("password"), // Will be hashed
   emailVerified: boolean("email_verified").default(false),
+  phoneVerified: boolean("phone_verified").default(false),
   
   gender: text("gender"), // 'male', 'female', 'other', 'prefer-not-to-say'
   batchYear: integer("batch_year").notNull(),

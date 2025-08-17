@@ -466,6 +466,143 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
+  // Google OAuth routes
+  app.get("/api/auth/google", (req: Request, res: Response, next) => {
+    // Check if Google OAuth is properly configured
+    if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET || 
+        process.env.GOOGLE_CLIENT_ID === 'your_google_client_id_here') {
+      return res.status(500).json({ 
+        message: "Google OAuth not configured. Please set up GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in your .env file. See OAUTH_SETUP.md for instructions." 
+      });
+    }
+    passport.authenticate('google', { scope: ['profile', 'email'] })(req, res, next);
+  });
+
+  app.get("/api/auth/google/callback", 
+    passport.authenticate('google', { failureRedirect: '/auth?error=oauth_failed' }),
+    async (req: Request, res: Response) => {
+      try {
+        const user = req.user as any;
+        (req.session as any).userId = user.id;
+        
+        // Check if user needs profile completion first, then phone verification
+        if (!user.batchYear || !user.state || !user.district) {
+          res.redirect('/auth?action=complete_profile&oauth=google');
+        } else if (!user.phone || user.phoneVerified !== true) {
+          res.redirect('/auth?action=verify_phone&oauth=google');
+        } else {
+          res.redirect('/');
+        }
+      } catch (error) {
+        console.error('Google OAuth callback error:', error);
+        res.redirect('/auth?error=oauth_error');
+      }
+    }
+  );
+
+  // Facebook OAuth routes
+  app.get("/api/auth/facebook", (req: Request, res: Response, next) => {
+    // Check if Facebook OAuth is properly configured
+    if (!process.env.FACEBOOK_CLIENT_ID || !process.env.FACEBOOK_CLIENT_SECRET || 
+        process.env.FACEBOOK_CLIENT_ID === 'your_facebook_app_id_here') {
+      return res.status(500).json({ 
+        message: "Facebook OAuth not configured. Please set up FACEBOOK_CLIENT_ID and FACEBOOK_CLIENT_SECRET in your .env file. See OAUTH_SETUP.md for instructions." 
+      });
+    }
+    passport.authenticate('facebook', { scope: ['email'] })(req, res, next);
+  });
+
+  app.get("/api/auth/facebook/callback", 
+    passport.authenticate('facebook', { failureRedirect: '/auth?error=oauth_failed' }),
+    async (req: Request, res: Response) => {
+      try {
+        const user = req.user as any;
+        (req.session as any).userId = user.id;
+        
+        // Check if user needs profile completion first, then phone verification
+        if (!user.batchYear || !user.state || !user.district) {
+          res.redirect('/auth?action=complete_profile&oauth=facebook');
+        } else if (!user.phone || user.phoneVerified !== true) {
+          res.redirect('/auth?action=verify_phone&oauth=facebook');
+        } else {
+          res.redirect('/');
+        }
+      } catch (error) {
+        console.error('Facebook OAuth callback error:', error);
+        res.redirect('/auth?error=oauth_error');
+      }
+    }
+  );
+
+  // Add phone number and verify for OAuth users
+  app.post("/api/auth/add-phone", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = (req.session as any).userId;
+      const { phone } = req.body;
+
+      if (!phone) {
+        return res.status(400).json({ message: "Phone number is required" });
+      }
+
+      // Check if phone is already taken
+      const existingUser = await storage.getUserByPhone(phone);
+      if (existingUser && existingUser.id !== userId) {
+        return res.status(400).json({ message: "Phone number is already registered" });
+      }
+
+      // Send OTP for verification
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      await storage.createOtpVerification({
+        phone,
+        otp,
+        expiresAt: new Date(Date.now() + 10 * 60 * 1000) // 10 minutes
+      });
+
+      // Send OTP via SMS/WhatsApp
+      await smsService.sendOTP(phone, otp);
+
+      res.json({ 
+        message: "OTP sent successfully. Please verify your phone number.",
+        phone: phone
+      });
+    } catch (error) {
+      console.error("Add phone error:", error);
+      res.status(500).json({ message: "Failed to add phone number" });
+    }
+  });
+
+  // Verify phone number for OAuth users
+  app.post("/api/auth/verify-phone", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = (req.session as any).userId;
+      const { phone, otp } = req.body;
+
+      if (!phone || !otp) {
+        return res.status(400).json({ message: "Phone number and OTP are required" });
+      }
+
+      // Verify OTP
+      const isValidOtp = await storage.verifyOtp(phone, otp);
+      if (!isValidOtp) {
+        return res.status(400).json({ message: "Invalid or expired OTP" });
+      }
+
+      // Update user with verified phone
+      const updatedUser = await storage.updatePhoneVerification(userId, phone, true);
+      if (!updatedUser) {
+        return res.status(500).json({ message: "Failed to update phone verification" });
+      }
+
+      res.json({ 
+        message: "Phone number verified successfully",
+        user: updatedUser
+      });
+    } catch (error) {
+      console.error("Verify phone error:", error);
+      res.status(500).json({ message: "Failed to verify phone number" });
+    }
+  });
+
   // Update user profile (for onboarding completion)
   app.put("/api/auth/profile", isAuthenticated, async (req: Request, res: Response) => {
     try {

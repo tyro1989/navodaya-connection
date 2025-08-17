@@ -25,6 +25,7 @@ async function runMigrations() {
         auth_provider TEXT NOT NULL,
         password TEXT,
         email_verified BOOLEAN DEFAULT FALSE,
+        phone_verified BOOLEAN DEFAULT FALSE,
         gender TEXT,
         batch_year INTEGER NOT NULL,
         profession TEXT,

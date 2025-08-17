@@ -2,9 +2,11 @@ import "dotenv/config";
 import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
+import passport from "passport";
 import { initializeDatabase, getPool } from "./db-conditional";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import { configureAuth } from "./auth";
 
 const app = express();
 app.use(express.json());
@@ -40,6 +42,13 @@ if (pool) {
 }
 
 app.use(session(sessionConfig));
+
+// Configure Passport authentication strategies
+configureAuth();
+
+// Initialize Passport middleware
+app.use(passport.initialize());
+app.use(passport.session());
 
 // Extend session interface for TypeScript
 declare module 'express-session' {

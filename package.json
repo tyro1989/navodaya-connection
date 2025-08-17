@@ -12,6 +12,7 @@
     "check": "tsc",
     "db:push": "drizzle-kit push",
     "db:migrate": "tsx scripts/migrate.ts",
+    "db:add-phone-verified": "tsx add-phone-verified-column.ts",
     "postbuild": "npm run db:migrate",
     "test": "vitest",
     "test:run": "vitest run",

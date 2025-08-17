@@ -49,6 +49,14 @@ export interface IStorage {
   // Authentication management
   createUserWithPhone(userData: any): Promise<User>;
   verifyUserPassword(phone: string, password: string): Promise<User | null>;
+  
+  // Social authentication
+  findUserByGoogleId(googleId: string): Promise<User | undefined>;
+  findUserByFacebookId(facebookId: string): Promise<User | undefined>;
+  findUserByEmail(email: string): Promise<User | undefined>;
+  linkGoogleAccount(userId: number, googleId: string): Promise<void>;
+  linkFacebookAccount(userId: number, facebookId: string): Promise<void>;
+  updatePhoneVerification(userId: number, phone: string, verified: boolean): Promise<User | undefined>;
 
   // Email verification management
   createEmailVerification(verification: InsertEmailVerification): Promise<EmailVerification>;
@@ -235,6 +243,42 @@ export class MemStorage implements IStorage {
 
   async getUserByEmail(email: string): Promise<User | undefined> {
     return this.users.find(u => u.email === email);
+  }
+
+  async findUserByGoogleId(googleId: string): Promise<User | undefined> {
+    return this.users.find(u => u.googleId === googleId);
+  }
+
+  async findUserByFacebookId(facebookId: string): Promise<User | undefined> {
+    return this.users.find(u => u.facebookId === facebookId);
+  }
+
+  async findUserByEmail(email: string): Promise<User | undefined> {
+    return this.getUserByEmail(email);
+  }
+
+  async linkGoogleAccount(userId: number, googleId: string): Promise<void> {
+    const user = this.users.find(u => u.id === userId);
+    if (user) {
+      user.googleId = googleId;
+    }
+  }
+
+  async linkFacebookAccount(userId: number, facebookId: string): Promise<void> {
+    const user = this.users.find(u => u.id === userId);
+    if (user) {
+      user.facebookId = facebookId;
+    }
+  }
+
+  async updatePhoneVerification(userId: number, phone: string, verified: boolean): Promise<User | undefined> {
+    const user = this.users.find(u => u.id === userId);
+    if (user) {
+      user.phone = phone;
+      user.phoneVerified = verified;
+      return user;
+    }
+    return undefined;
   }
 
   async createUserWithPhone(userData: any): Promise<User> {
@@ -951,6 +995,46 @@ export class DatabaseStorage implements IStorage {
 
   async getUserByEmail(email: string): Promise<User | undefined> {
     const [user] = await this.db.select().from(users).where(eq(users.email, email));
+    return user || undefined;
+  }
+
+  async findUserByGoogleId(googleId: string): Promise<User | undefined> {
+    const [user] = await this.db.select().from(users).where(eq(users.googleId, googleId));
+    return user || undefined;
+  }
+
+  async findUserByFacebookId(facebookId: string): Promise<User | undefined> {
+    const [user] = await this.db.select().from(users).where(eq(users.facebookId, facebookId));
+    return user || undefined;
+  }
+
+  async findUserByEmail(email: string): Promise<User | undefined> {
+    return this.getUserByEmail(email);
+  }
+
+  async linkGoogleAccount(userId: number, googleId: string): Promise<void> {
+    await this.db
+      .update(users)
+      .set({ googleId })
+      .where(eq(users.id, userId));
+  }
+
+  async linkFacebookAccount(userId: number, facebookId: string): Promise<void> {
+    await this.db
+      .update(users)
+      .set({ facebookId })
+      .where(eq(users.id, userId));
+  }
+
+  async updatePhoneVerification(userId: number, phone: string, verified: boolean): Promise<User | undefined> {
+    const [user] = await this.db
+      .update(users)
+      .set({ 
+        phone,
+        phoneVerified: verified 
+      })
+      .where(eq(users.id, userId))
+      .returning();
     return user || undefined;
   }
 
